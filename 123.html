@@ -1,0 +1,1518 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>系統化櫥櫃報價系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- SheetJS 用於導出 Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f1f5f9;
+            color: #1e293b;
+            /* 優化移動端點擊體驗 */
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .no-print { display: block; }
+        .print-only { display: none; }
+
+        @media print {
+            /* 隱藏瀏覽器預設頁首頁尾 */
+            @page { 
+                /* 修改點 1 & 3: 設定列印邊界 上下1.5cm 左右2cm */
+                margin: 1.5cm 2cm; 
+                size: auto; 
+            }
+            
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            .print-full { width: 100% !important; margin: 0 !important; padding: 0 !important; }
+            
+            /* 設定列印時的邊距，補償 @page margin */
+            html, body {
+                width: 100%;
+                height: auto;
+                margin: 0 !important;
+                padding: 0 !important;
+                background-color: white !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            body { 
+                color: black; 
+                /* 核心修改：移除 padding，改用 @page margin 控制 */
+            }
+            
+            .shadow-sm, .shadow-md, .shadow-lg, .shadow-2xl { box-shadow: none !important; }
+            .rounded-[2.5rem], .rounded-3xl, .rounded-2xl { border-radius: 0 !important; }
+
+            /* 修改點 2: 確保項目完整性，跨頁自動斷行 */
+            .break-inside-avoid {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+
+            /* 修改點 4: 頁尾設定 */
+            .print-footer {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                width: 100%;
+                text-align: center;
+                font-size: 12px;
+                font-weight: bold;
+                background: white;
+            }
+            .print-footer::after {
+                /* 修改：只顯示當前頁數 */
+                content: counter(page);
+            }
+        }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+        /* 防止按鈕雙擊縮放 (Touch Action Manipulation) */
+        button, .dual-input-btn, .chip-btn, select, input[type="checkbox"] {
+            touch-action: manipulation;
+        }
+
+        .dual-input-container {
+            display: flex;
+            align-items: center;
+            background: white;
+            border-radius: 0.75rem; 
+            border: 2px solid #e2e8f0;
+            padding: 2px 4px;
+            box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.03);
+            justify-content: space-between;
+            width: 100%;
+            height: 60px;
+            overflow: hidden;
+        }
+        .dual-input-btn {
+            width: 48px;
+            height: 48px;
+            color: #3b82f6;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0; 
+            user-select: none; /* 防止連點時選取文字 */
+        }
+        .dual-input-btn:hover { color: #2563eb; background-color: #f8fafc; }
+
+        .chip-btn {
+            padding: 0.6rem 1.5rem; font-size: 14px; font-weight: 900;
+            border-radius: 9999px; border: 1px solid #e2e8f0;
+            transition: all 0.2s; background: white; color: #64748b; cursor: pointer;
+            user-select: none;
+        }
+        .chip-btn.active-blue { background-color: #2563eb; color: white; border-color: #2563eb; }
+        .chip-btn.active-orange { background-color: #f97316; color: white; border-color: #f97316; }
+        .chip-btn.active-emerald { background-color: #10b981; color: white; border-color: #10b981; }
+        .chip-btn.active-indigo { background-color: #4f46e5; color: white; border-color: #4f46e5; }
+        .chip-btn.active-red { background-color: #ef4444; color: white; border-color: #ef4444; }
+    </style>
+</head>
+<body class="pb-24">
+
+    <!-- 網頁標頭 -->
+    <header class="bg-slate-900 text-white p-8 sticky top-0 z-50 shadow-xl no-print">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-6">
+                <div class="bg-blue-600 p-3 rounded-xl text-white shadow-lg shadow-blue-500/20"><i data-lucide="calculator" size="32"></i></div>
+                <div>
+                    <h1 class="text-3xl font-bold tracking-tight uppercase">櫥櫃報價</h1>
+                    <p class="text-sm text-slate-400 uppercase tracking-widest opacity-80 font-bold">完整(平板優化修正版)1.4</p>
+                </div>
+            </div>
+            <div class="flex gap-4">
+                <button onclick="exportToExcel()" class="bg-emerald-600 hover:bg-emerald-700 px-8 py-3 rounded-xl text-lg font-black transition-all border border-white/10 flex items-center gap-3 shadow-lg shadow-emerald-500/20">
+                    <i data-lucide="save" size="22"></i> 儲存專案
+                </button>
+                <button onclick="validateAndPrint()" class="bg-white/10 hover:bg-white/20 px-8 py-3 rounded-xl text-lg font-black transition-all border border-white/10 flex items-center gap-3">
+                    <i data-lucide="printer" size="22"></i> 列印報價單
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 列印專屬內容 -->
+    <div class="print-only print-full p-10">
+        <!-- 修改：抬頭居中 (items-center) -->
+        <div class="pb-0 mb-0 flex flex-col items-center relative">
+            <div>
+                <h1 class="text-4xl font-black tracking-tighter text-center">合夆廚具 報價單/QUOTATION</h1>
+            </div>
+            <!-- 6色色塊 5px高度 -->
+            <div class="w-full flex h-[5px] mt-2">
+                <div style="background-color: #911F27;" class="flex-1"></div>
+                <div style="background-color: #C33229;" class="flex-1"></div>
+                <div style="background-color: #C06B2C;" class="flex-1"></div>
+                <div style="background-color: #474843;" class="flex-1"></div>
+                <div style="background-color: #656666;" class="flex-1"></div>
+                <div style="background-color: #999898;" class="flex-1"></div>
+            </div>
+        </div>
+
+        <!-- 修改：客戶資訊區塊，將日期與客戶名稱放在同一列 (flex justify-between) -->
+        <div class="mt-2 mb-2 text-base">
+             <div class="flex justify-between items-end">
+                <p><span class="text-slate-400">客戶名稱：</span><span id="print-cust-name" class="font-black"></span></p>
+                <div id="print-date-display" class="font-bold"></div>
+             </div>
+             <!-- 聯絡電話與工程地址，各留 mt-2 -->
+             <p class="mt-2"><span class="text-slate-400">聯絡電話：</span><span id="print-cust-phone" class="font-black"></span></p>
+             <p class="mt-2"><span class="text-slate-400">工程地址：</span><span id="print-cust-address" class="font-black"></span></p>
+        </div>
+
+        <div id="print-items-list" class="space-y-2"></div>
+
+        <!-- 核心修改：列印的每一個項目與總金額上的分隔線中間留mt-2 (改為 mt-2) -->
+        <div class="mt-2 border-t-2 border-slate-200 pt-2 flex flex-col items-end">
+            <!-- 減少間距 -->
+            <div class="text-right mb-0 pr-6">
+                <p class="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Grand Total Amount</p>
+                <p class="text-6xl font-black italic" id="print-total-display">$0</p>
+                <p class="text-xs font-bold text-red-500 mt-2">(本金額未含5%營業稅)</p>
+            </div>
+            
+            <!-- 減少間距 -->
+            <div class="w-full flex flex-col mt-0 gap-8">
+                <!-- 調整備註間距 -->
+                <div class="w-full text-xs leading-relaxed text-slate-600 font-bold">
+                    <p class="mb-1">備註：</p>
+                    <div class="space-y-1">
+                        <p>1. 注意此版本為報價單，價格仍然會受原物料及匯率波動影響，實際價格須以正式簽約單為主準。</p>
+                        <p>2. 本表單為保密文件且包含法定保密內容，如您非此表單所指定之收件人或收件機構，請通知本公司，請勿轉載、複印用於其它任何目的，或向任何人披露其內容或其附件。</p>
+                        <p>3. 廚具/系統櫃皆為訂製品,商品製作需覆量後隔天起算10~12工作天(不含六/日)，驗收無誤後於三日內給付尾款。</p>
+                        <p>4. 安裝當日如遇現場環境不符施工要求，可能產生額外點工費用或延期。</p>
+                        <p class="mt-4 text-slate-900 border-b border-slate-300 pb-1 text-sm">本報價含標配五金。最終依丈量施工圖收費。本報價有效日期至 <span id="print-valid-display" class="font-black"></span> 為止。</p>
+                    </div>
+                </div>
+                
+                <div class="w-full flex justify-end mt-24">
+                    <!-- 客戶確認簽名與分隔線中間留 mt-2 (使用 pt-2) -->
+                    <div class="w-72 border-t-2 border-slate-900 pt-2">
+                        <p class="text-xs font-black text-center uppercase tracking-widest">客戶確認簽名 Signature</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- 修改點 4: 頁尾 -->
+        <div class="print-footer"></div>
+    </div>
+
+    <!-- 主要操作區域 -->
+    <main class="max-w-7xl mx-auto p-4 md:p-8 space-y-12 print-full no-print">
+        <section class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-10">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
+                <div><label class="text-sm font-black text-slate-400 uppercase mb-3 block tracking-widest text-left">客戶名稱 CUSTOMER <span class="text-red-500">*</span></label><input id="cust-name" class="w-full bg-slate-50 border-none rounded-xl p-4 text-lg font-black outline-none focus:ring-2 focus:ring-blue-500" placeholder="必填" oninput="render()"></div>
+                <div><label class="text-sm font-black text-slate-400 uppercase mb-3 block tracking-widest text-left">聯絡電話 PHONE <span class="text-red-500">*</span></label><input id="cust-phone" class="w-full bg-slate-50 border-none rounded-xl p-4 text-lg font-black outline-none focus:ring-2 focus:ring-blue-500" placeholder="必填" oninput="render()"></div>
+                <div><label class="text-sm font-black text-slate-400 uppercase mb-3 block tracking-widest text-left">工程地址 ADDRESS <span class="text-red-500">*</span></label><input id="cust-address" class="w-full bg-slate-50 border-none rounded-xl p-4 text-lg font-black outline-none focus:ring-2 focus:ring-blue-500" placeholder="必填" oninput="render()"></div>
+                <div><label class="text-sm font-black text-slate-400 uppercase mb-3 block tracking-widest text-left">報價日期 DATE</label><input id="date" class="w-full bg-slate-50 border-none rounded-xl p-4 text-lg font-black outline-none focus:ring-2 focus:ring-blue-500" type="date" onchange="render()"></div>
+            </div>
+        </section>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-10">
+            <div class="lg:col-span-12 flex flex-wrap gap-6">
+                <button onclick="addItem('base')" class="flex-1 min-w-[150px] bg-slate-800 text-white p-8 rounded-[2rem] font-bold text-2xl hover:scale-105 transition-all shadow-xl flex items-center justify-center gap-4"><i data-lucide="plus"></i>下櫃</button>
+                <button onclick="addItem('wall')" class="flex-1 min-w-[150px] bg-indigo-700 text-white p-8 rounded-[2rem] font-bold text-2xl hover:scale-105 transition-all shadow-xl flex items-center justify-center gap-4"><i data-lucide="plus"></i>吊櫃</button>
+                <button onclick="addItem('high')" class="flex-1 min-w-[150px] bg-orange-600 text-white p-8 rounded-[2rem] font-bold text-2xl hover:scale-105 transition-all shadow-xl flex items-center justify-center gap-4"><i data-lucide="plus"></i>高櫃</button>
+                <button onclick="addItem('piece')" class="flex-1 min-w-[150px] bg-emerald-700 text-white p-8 rounded-[2rem] font-bold text-2xl hover:scale-105 transition-all shadow-xl flex items-center justify-center gap-4"><i data-lucide="plus"></i>件式</button>
+                <button onclick="addItem('appliance')" class="flex-1 min-w-[150px] bg-sky-700 text-white p-8 rounded-[2rem] font-bold text-2xl hover:scale-105 transition-all shadow-xl flex items-center justify-center gap-4"><i data-lucide="plus"></i>電器/水龍頭/其他</button>
+            </div>
+        </div>
+
+        <div id="items-container" class="space-y-16"></div>
+
+        <section class="bg-white rounded-[4rem] p-12 md:p-24 border border-slate-200 shadow-2xl flex flex-col md:flex-row justify-between items-center gap-10">
+            <div class="space-y-6">
+                <div class="flex items-center gap-4 text-slate-800"><i data-lucide="shield-check" class="text-blue-600" size="48"></i><h2 class="text-6xl font-black tracking-tighter uppercase italic">Final Quotation</h2></div>
+                <p class="text-xl text-slate-400 font-bold max-w-lg italic leading-relaxed">本報價含標配五金。最終依丈量施工圖收費。本報價有效日期至 <span id="valid-until-display" class="text-blue-600 font-black"></span>為止。</p>
+            </div>
+            <div class="text-right">
+                <span class="text-sm font-black text-blue-600 uppercase tracking-[1em] block mb-3 opacity-60 font-bold">Total Amount</span>
+                <div id="grand-total" class="text-[8rem] md:text-[10rem] font-black italic tracking-tighter leading-none text-slate-900 border-b-[24px] border-blue-600 pb-8 inline-block font-black">$0</div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 驗證錯誤彈窗 -->
+    <div id="error-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] hidden items-center justify-center p-4 no-print">
+        <div class="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl border border-slate-200 text-center space-y-6 animate-in zoom-in-95 duration-200">
+            <div class="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
+                <i data-lucide="alert-circle" size="40"></i>
+            </div>
+            <div class="space-y-2">
+                <h3 class="text-2xl font-black text-slate-900">欄位尚未填寫</h3>
+                <p class="text-slate-500 font-bold leading-relaxed">請確認已填寫「客戶名稱」、「聯絡電話」及「工程地址」，方可執行列印。</p>
+            </div>
+            <button onclick="document.getElementById('error-modal').classList.add('hidden'); document.getElementById('error-modal').classList.remove('flex');" class="w-full bg-slate-900 text-white py-4 rounded-xl font-black hover:bg-slate-800 transition-all shadow-lg">
+                返回修改
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const DATA = {
+            baseCabinetMatrix: {
+                "木芯板(白)": { "美耐板": 150, "1.0不鏽鋼": 164, "1.2不鏽鋼": 174, "凱特石": 194, "三星/LG石": 228, "石英石1": 294, "石英石2": 318 },
+                "0.4歐化不鏽鋼": { "美耐板": 160, "1.0不鏽鋼": 174, "1.2不鏽鋼": 184, "凱特石": 204, "三星/LG石": 238, "石英石1": 304, "石英石2": 328 },
+                "0.51歐化不鏽鋼": { "美耐板": 170, "1.0不鏽鋼": 184, "1.2不鏽鋼": 194, "凱特石": 214, "三星/LG石": 248, "石英石1": 314, "石英石2": 338 },
+            },
+            sinkOptions: [
+                { name: "32圓", price: 2500 }, { name: "35方", price: 2500 }, { name: "56", price: 2500 },
+                { name: "60", price: 2700 }, { name: "63", price: 4100 }, { name: "74", price: 5300 }
+            ],
+            doorUpgrades: { "美耐板(內含)": 0, "水晶門板(H80內)": 16, "結晶6面(H80內)": 20, "水晶門板(H80-110)": 20, "結晶6面(H80-110)": 32 },
+            wallSpecs: [ { label: "60cm 內", price: 74 }, { label: "61 ~ 70 cm", price: 84 }, { label: "71 ~ 80 cm", price: 94 }, { label: "81 ~ 90 cm", price: 104 }, { label: "91 ~ 100 cm", price: 114 } ],
+            highData: { 
+                "電器櫃(W60*H210-240)": { "美耐板": 15600, "V313": 16600, "水晶": 17600, "結晶": 19000 },
+                "高身拉櫃(W30/40)": { "美耐板": 30000, "結晶": 33000 } 
+            },
+            pieceCabinets: [ 
+                { name: "144 單槽", price: 16000 }, { name: "100 單槽", price: 12000 }, { name: "72 單槽", price: 9800 },
+                { name: "144 平台", price: 13600 }, { name: "100 平台", price: 10200 }, { name: "72 平台", price: 8000 },
+                { name: "40 平台", price: 6000 }, { name: "72 爐台", price: 7800 }, { name: "40 瓦斯箱", price: 6000 },
+                { name: "角台", price: 12000 } 
+            ],
+            sidePricing: { 
+                sticker: { 
+                    base: { "美耐板": 1000, "水晶": 1400, "結晶6面": 1500 }, 
+                    wall: { "美耐板": 800, "水晶": 1100, "結晶6面": 1200 }, 
+                    high: { "美耐板": 2200, "水晶": 3400, "結晶6面": 3600 } 
+                },
+                panel: { 
+                    base: { "美耐板": 1400, "水晶": 1900, "結晶6面": 2200, "V313": 1400 }, 
+                    wall: { "美耐板": 900, "水晶": 1100, "結晶6面": 1400, "V313": 1000 }, 
+                    high: { "美耐板": 3600, "水晶": 4800, "結晶6面": 6000, "V313": 3400 } 
+                } 
+            },
+            countertopProcessings: {
+                "美耐板": [{ name: "水槽挖孔工資", price: 900 },{ name: "缺角", price: 900 }],
+                "不鏽鋼": [{ name: "圓角", price: 900 }, { name: "ST塞板", price: 900 }, { name: "加牆封死", price: 1100 }, { name: "L型連接工資", price: 1700 }, { name: "缺角工資", price: 1100 }, { name: "U字型缺角", price: 1700 }, { name: "內外斜角加牆", price: 1100 }, { name: "雙加牆", price: 1700 }, { name: "普爐連結工資", price: 1100 }, { name: "封膜包裝檯面", price: 1900 }, { name: "修改基本工資", price: 2500 }],
+                "人造石": [{ name: "缺角工資", price: 1100 }, { name: "單口爐平接工資", price: 4300 }, { name: "導圓R3-R10cm", price: 2300 }, { name: "水槽平接工資", price: 4300 }, { name: "導圓R10-1/4圓", price: 3300 }, { name: "水槽下崁工資", price: 2700 }, { name: "導圓1/2圓", price: 4300 }, { name: "側落連接工資", price: 5300 }],
+                "石英石": [{ name: "導圓1R-3R", price: 1900 }, { name: "開挖插座孔", price: 1200 }, { name: "導圓1/4圓", price: 5300 }, { name: "挖爐孔工資", price: 2300 }, { name: "導圓1/2圓", price: 1100 }, { name: "P型桌面", price: 13300 }, { name: "水槽下崁工資", price: 6300 }, { name: "爐孔平接工資", price: 9300 }, { name: "水槽平接工資", price: 11300 }, { name: "45度接側落", price: 9300 }]
+            },
+            cabinetProcessing: [ { name: "桶身挖洞工資/處", price: 1100 }, { name: "桶身加高加深工資", price: 0 }, { name: "挖插座孔", price: 1100 } , { name: "斜角工資/處", price: 1500 } , { name: "缺角", price: 1300 } , { name: "現場基本修改/處", price: 1300 } , { name: "無把手工資/台", price: 1100 } , { name: "桶身減高減深/台", price: 1100 } , { name: "中隔板工資/處", price: 900 } ],
+            handleOptions: [ { name: "一般把手", price: 0 }, { name: "拍拍手", price: 150 }, { name: "上崁(C型)把手", price: 12 }, { name: "V313-45°", price: 12 }, { name: "結晶-45°", price: 12 }, { name: "結晶-J把", price: 24 }, { name: "下櫥無把手", price: 800 } ],
+            kickplateOptions: [ { name: "PVC黑/灰(不計價)", price: 0 }, { name: "美耐板", price: 500 }, { name: "塑鋁踢", price: 600 }, { name: "鋁踢腳板", price: 1600 } ],
+            hardwareOptions: [ 
+                { name: "木抽(緩衝滑軌)", priceMap: { "50cm以內": 1800, "51~60cm": 2000, "61~70cm": 2200, "71~80cm": 2400, "81~90cm": 2600 } },
+                { name: "木三抽or二抽(緩衝滑軌)", priceMap: { "50cm以內": 5400, "51~60cm": 6000, "61~70cm": 6600, "71~80cm": 7200, "81~90cm": 7800 } },
+                { name: "ST抽(緩衝滑軌)", priceMap: { "50cm以內": 2000, "51~60cm": 2400, "61~70cm": 2800, "71~80cm": 3200, "81~90cm": 3600 } },
+                { name: "ST三抽or二抽(緩衝滑軌)", priceMap: { "50cm以內": 6000, "51~6200": 7200, "61~8400": 8400, "71~9600": 9600, "81~10800": 10800 } },
+                { name: "JASMINE緩衝鋁抽(無桿/低)", priceMap: {"61~70cm": 4200, "71~80cm": 4200, "81~90cm": 4200 } },
+                { name: "JASMINE緩衝鋁抽(單桿/高)", priceMap: {"61~70cm": 4600, "71~80cm": 4600, "81~90cm": 4600 } },
+                { name: "BLUM緩衝鋁抽(無桿/低)", priceMap: {"61~70cm": 4400, "71~80cm": 4400, "81~90cm": 4400 } },
+                { name: "BLUM緩衝鋁抽(單桿/高)", priceMap: {"61~70cm": 4800, "71~80cm": 4800, "81~90cm": 4800 } },
+                { name: "三邊拉籃*2組(不鏽鋼緩衝)", priceMap: { "72/80/90cm": 7600 } },
+                { name: "ST側拉架*1組(不鏽鋼緩衝)", priceMap: {"15/20cm": 4400, "25/30cm": 4800, "35/40cm": 5200 } },
+                { name: "轉角小怪物*1組(不鏽鋼緩衝)", priceMap: { "標準尺寸": 9600 } }
+            ],
+            smallHardwareOptions: [ 
+                { name: "刀叉盤(36~45cm)", price: 800 }, { name: "刀叉盤(50~60cm)", price: 1200 }, { name: "刀叉盤(72~90cm)", price: 1300 }, 
+                { name: "易利勾(/cm)", price: 12, unit: 'cm' }, { name: "橫桿+固定頭(/cm)", price: 14, unit: 'cm' }, 
+                { name: "小S勾", price: 40 }, { name: "大S勾", price: 80 }, { name: "滴水籃(短)", price: 120 }, { name: "滴水籃(長)", price: 200 }
+            ],
+            applianceCategories: [
+                { name: "水龍頭", installFee: 400 }, { name: "瓦斯爐", installFee: 400 }, { name: "掛式烘碗機", installFee: 400 },
+                { name: "落地烘碗機", installFee: 800 }, { name: "抽油煙機", installFee: 400 }, { name: "近吸/倒T式油煙機", installFee: 800 },
+                { name: "洗碗機", installFee: 1600 }, { name: "淨水器 RO", installFee: 1200 }, { name: "特殊電器", installFee: 0 }
+            ]
+        };
+
+        let items = [];
+
+        window.onload = () => { 
+            const now = new Date();
+            const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            document.getElementById('date').value = today;
+            
+            // 新增: 點擊空白處關閉鍵盤的邏輯
+            document.addEventListener('click', (e) => {
+                const tag = e.target.tagName;
+                // 如果點擊的是輸入框、選擇框、按鈕或其內部元素，則不做動作
+                if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.closest('button') || e.target.closest('.dual-input-container')) {
+                    return;
+                }
+                // 如果當前有焦點在輸入框上，則移除焦點（收起鍵盤）
+                if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+                    document.activeElement.blur();
+                }
+            });
+
+            render(); 
+        };
+
+        function validateAndPrint() {
+            const name = document.getElementById('cust-name').value.trim();
+            const phone = document.getElementById('cust-phone').value.trim();
+            const address = document.getElementById('cust-address').value.trim();
+            if (!name || !phone || !address) {
+                const modal = document.getElementById('error-modal');
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+                lucide.createIcons();
+                return;
+            }
+            window.print();
+        }
+
+        function accordionLogic(activeId) {
+            items.forEach(i => { if(i.id !== activeId) i.isCollapsed = true; });
+        }
+
+        function isPureWallQuote() {
+            const hasWall = items.some(it => it.type === 'wall');
+            const hasOtherMain = items.some(it => ['base', 'high', 'piece'].includes(it.type));
+            return hasWall && !hasOtherMain;
+        }
+
+        function addItem(type) {
+            const newItemId = Date.now();
+            accordionLogic(newItemId);
+            let defaultRate = 0;
+            if (type === 'base') defaultRate = 150;
+            else if (type === 'wall') {
+                defaultRate = 74;
+                if (isPureWallQuote()) defaultRate += 5; 
+            }
+
+            const newItem = {
+                id: newItemId, type, length: "", isL: false, body: "木芯板(白)", countertop: "美耐板", door: "美耐板(內含)",
+                rate: defaultRate, 
+                wallSpec: "60cm 內", cabinetProcessing: {}, processing: {}, sideType: 'none', sideMaterial: '美耐板', sideQty: "0", shelfQty: "0",
+                handleType: "一般把手", handleQty: "0", kickplateType: "PVC黑/灰(不計價)", kickplateQty: "0",
+                selectedHardware: [], selectedSmallHardware: [], applianceConfigs: {}, selectedPieces: [], 
+                pieceOptions: [], pieceInstalls: [], isCollapsed: false,
+                highSpec: Object.keys(DATA.highData)[0],
+                highDoor: Object.keys(DATA.highData[Object.keys(DATA.highData)[0]])[0],
+                railQty: "0", specialAccessories: [], tempAcc: { name: '', price: '', qty: '1', active: false },
+                selectedSink: "none", sinkQty: "1", customSinks: [], tempSink: { name: '', price: '', qty: '1', active: false },
+                otherItems: [], tempOther: { name: '', price: '', qty: '1', active: false } 
+            };
+            items.push(newItem); 
+            syncAllRates(); 
+            render();
+            if(!['high', 'piece', 'appliance'].includes(type)) {
+                setTimeout(() => { document.getElementById(`length-${newItemId}`)?.focus(); }, 50);
+            }
+        }
+
+        function removeItem(id) { 
+            items = items.filter(i => i.id !== id); 
+            syncAllRates(); 
+            render(); 
+        }
+        
+        function toggleCollapse(id) { 
+            const item = items.find(x => x.id === id); 
+            if(item) {
+                const targetState = !item.isCollapsed;
+                if(!targetState) accordionLogic(id);
+                item.isCollapsed = targetState;
+                render(); 
+            } 
+        }
+
+        function updateLength(id, value) {
+            const i = items.find(x => x.id === id);
+            if(i) { 
+                i.length = value; 
+                syncAllRates(); 
+                render(); 
+            }
+        }
+
+        function updateItemField(id, field, value) {
+            const i = items.find(x => x.id === id);
+            if(i) {
+                i[field] = value; 
+                if(field === 'highSpec') i.highDoor = Object.keys(DATA.highData[value])[0];
+                syncAllRates();
+                render();
+            }
+        }
+
+        function syncAllRates() {
+            const pureWall = isPureWallQuote();
+            items.forEach(it => {
+                if (it.type === 'base') {
+                    let base = (DATA.baseCabinetMatrix[it.body]?.[it.countertop] || 150) + (DATA.doorUpgrades[it.door] || 0);
+                    if (Number(it.length) > 0 && Number(it.length) < 180) base += 5;
+                    if (it.body.includes("木芯板") && (it.cabinetProcessing["桶身加高加深工資"] || 0) > 0) {
+                        base += 5;
+                    }
+                    it.rate = base;
+                } else if (it.type === 'wall') {
+                    let base = (DATA.wallSpecs.find(s=>s.label===it.wallSpec)?.price || 74);
+                    if (Number(it.length) > 0 && Number(it.length) < 180) base += 5;
+                    if (pureWall) base += 5; 
+                    it.rate = base;
+                }
+            });
+        }
+
+        function stepItemField(id, field, delta) {
+            const i = items.find(x => x.id === id);
+            if(i) { 
+                i[field] = Math.max(0, (Number(i[field]) || 0) + delta).toString(); 
+                syncAllRates(); 
+                render(); 
+            }
+        }
+
+        function addHardware(id, name) {
+            const i = items.find(x => x.id === id);
+            const h = DATA.hardwareOptions.find(o => o.name === name);
+            if(i && h) { i.selectedHardware.push({ id: Date.now(), name: h.name, qty: 1, size: Object.keys(h.priceMap)[0] }); render(); return; }
+            const sh = DATA.smallHardwareOptions.find(o => o.name === name);
+            if(i && sh) { i.selectedSmallHardware.push({ id: Date.now(), name: sh.name, qty: 1, price: sh.price }); render(); }
+        }
+
+        function updateProc(id, cat, name, delta) {
+            const i = items.find(x => x.id === id);
+            if(i) {
+                const target = cat === 'cabinet' ? i.cabinetProcessing : i.processing;
+                const nextVal = Math.max(0, (target[name] || 0) + delta);
+                if (nextVal === 0) delete target[name]; else target[name] = nextVal;
+                syncAllRates(); 
+                render();
+            }
+        }
+
+        function setAppMode(id, cat, mode) {
+            const i = items.find(x=>x.id===id);
+            if(i) {
+                if(!i.applianceConfigs[cat]) i.applianceConfigs[cat] = { mode: 'none', name: '', price: '0', qty: (mode === 'install' ? '0' : '1'), hoseQty: '0', pipeLen: '0', regulator: '無', ductType: '無', ductQty: '0', ductLen: '0', gasType: '液化' };
+                if (cat === '瓦斯爐' && mode === 'install') {
+                    i.applianceConfigs[cat].regulator = '無';
+                }
+                i.applianceConfigs[cat].mode = mode; render();
+            }
+        }
+
+        function updateAppConfig(id, cat, field, value) {
+            const i = items.find(x=>x.id===id);
+            if(i && i.applianceConfigs[cat]) { i.applianceConfigs[cat][field] = value; render(); }
+        }
+
+        function stepAppConfig(id, cat, field, delta) {
+            const i = items.find(x=>x.id===id);
+            if(i && i.applianceConfigs[cat]) {
+                i.applianceConfigs[cat][field] = Math.max(0, (Number(i.applianceConfigs[cat][field]) || 0) + delta).toString();
+                render();
+            }
+        }
+
+        function addOtherItem(id) {
+            const i = items.find(x => x.id === id);
+            if(i && i.tempOther.name && i.tempOther.price) {
+                i.otherItems.push({ id: Date.now(), name: i.tempOther.name, price: Number(i.tempOther.price) || 0, qty: Number(i.tempOther.qty) || 1 });
+                i.tempOther = { name: '', price: '', qty: '1', active: false };
+                render();
+            }
+        }
+        function removeOtherItem(itemId, otherId) {
+            const i = items.find(x => x.id === itemId);
+            if(i) { i.otherItems = i.otherItems.filter(a => a.id !== otherId); render(); }
+        }
+
+        function calculate(item) {
+            let total = 0, detail = [];
+            const numLen = Number(item.length) || 0;
+
+            if (item.type === 'piece') {
+                const pCount = item.selectedPieces.length;
+                item.selectedPieces.forEach(pName => {
+                    const pData = DATA.pieceCabinets.find(x => x.name === pName);
+                    if(pData) { total += pData.price; detail.push({ name: pData.name, val: pData.price, qty: 1 }); }
+                });
+                if(item.pieceOptions.includes('選色加價')) { 
+                    const fee = pCount * 150; total += fee; detail.push({ name: `選色加價 (${pCount}台)`, val: fee, qty: pCount }); 
+                }
+                if(item.pieceOptions.includes('件式自載')) { 
+                    const discount = pCount * 150; total -= discount; detail.push({ name: `件式自載折價 (${pCount}台)`, val: -discount, qty: pCount }); 
+                }
+                item.pieceInstalls.forEach(inst => { total += 400; detail.push({ name: `安裝費: ${inst}`, val: 400, qty: 1 }); });
+            } else if (item.type === 'high') {
+                const basePrice = DATA.highData[item.highSpec]?.[item.highDoor] || 0;
+                total += basePrice; detail.push({ name: `高櫃主體(${item.highDoor})`, val: basePrice, qty: 1 });
+                if (!item.highSpec.includes("高身拉櫃")) {
+                    const rFee = (Number(item.railQty) || 0) * 1500; total += rFee; if(rFee > 0) detail.push({ name: `緩衝滑軌費`, val: rFee, qty: item.railQty });
+                }
+                item.specialAccessories.forEach(a => { const sub = a.price * a.qty; total += sub; detail.push({ name: a.name, val: sub, qty: a.qty }); });
+                const hp = DATA.handleOptions.find(o => o.name === item.handleType)?.price || 0;
+                const hTotal = hp * (Number(item.handleQty) || 0);
+                if(hTotal > 0) { total += hTotal; detail.push({ name: `把手(${item.handleType})`, val: hTotal, qty: item.handleQty }); }
+            } else if (['base', 'wall'].includes(item.type)) {
+                const deduct = item.isL ? (item.type==='base'?30:38) : 0;
+                const calcLen = Math.max(0, numLen - deduct);
+                const rate = Number(item.rate) || 0;
+                let sub = calcLen * rate; total += sub;
+                if (sub > 0) detail.push({ name: `主體(單價:$${rate})`, val: sub, qty: 1 });
+
+                if (item.type === 'base') {
+                    const hasFloorDryer = items.some(it => 
+                        it.type === 'appliance' && 
+                        it.applianceConfigs['落地烘碗機'] && 
+                        it.applianceConfigs['落地烘碗機'].mode !== 'none'
+                    );
+                    const firstBaseId = items.find(it => it.type === 'base')?.id;
+                    if (hasFloorDryer && item.id === firstBaseId) {
+                        total -= 2400;
+                        detail.push({ name: "落地烘碗機扣除", val: -2400, qty: 1 });
+                    }
+
+                    // 水槽計價邏輯：
+                    // 1. 如果檯面是不鏽鋼 (包含字串)，且選了下拉選單的標準水槽，則計價
+                    if (item.countertop.includes('不鏽鋼') && item.selectedSink !== 'none') {
+                        const s = DATA.sinkOptions.find(x => x.name === item.selectedSink);
+                        const sq = Number(item.sinkQty) || 1;
+                        if (s) { total += s.price * sq; detail.push({ name: `水槽(${s.name})`, val: s.price * sq, qty: sq }); }
+                    }
+                    
+                    // 2. 自定義水槽：所有材質都計算
+                    item.customSinks.forEach(s => { 
+                        const sub = s.price * s.qty; 
+                        total += sub; 
+                        detail.push({ name: `自定義水槽(${s.name})`, val: sub, qty: s.qty }); 
+                    });
+
+                    const kTotal = (DATA.kickplateOptions.find(o => o.name === item.kickplateType)?.price || 0) * (Number(item.kickplateQty) || 0);
+                    if(kTotal > 0) { total += kTotal; detail.push({ name: `踢腳`, val: kTotal, qty: item.kickplateQty }); }
+                }
+
+                const hp = DATA.handleOptions.find(o => o.name === item.handleType)?.price || 0;
+                const hTotal = hp * (Number(item.handleQty) || 0);
+                if(hTotal > 0) { total += hTotal; detail.push({ name: `把手`, val: hTotal, qty: item.handleQty }); }
+
+                Object.entries(item.cabinetProcessing).forEach(([n, q]) => { 
+                    if (q > 0) {
+                        if (n === "桶身加高加深工資") {
+                            if (item.body.includes("不鏽鋼")) {
+                                const fee = 1200 * q;
+                                total += fee;
+                                detail.push({ name: n, val: fee, qty: q });
+                            }
+                        } else {
+                            const p = DATA.cabinetProcessing.find(x=>x.name===n);
+                            if (p) {
+                                total += p.price * q;
+                                detail.push({ name: n, val: p.price * q, qty: q });
+                            }
+                        }
+                    }
+                });
+
+                Object.entries(item.processing).forEach(([n, q]) => { 
+                    const p = Object.values(DATA.countertopProcessings).flat().find(x=>x.name===n);
+                    if(p && q>0){ total+=p.price*q; detail.push({name:n, val:p.price*q, qty: q}); }
+                });
+
+                if (item.type === 'base') {
+                    item.selectedHardware.forEach(h => {
+                        const hD = DATA.hardwareOptions.find(o=>o.name===h.name); 
+                        const p = hD.priceMap[h.size] || 0;
+                        total += p * h.qty; detail.push({ name: h.name, val: p * h.qty, qty: h.qty });
+                    });
+                    item.selectedSmallHardware.forEach(h => {
+                        const hData = DATA.smallHardwareOptions.find(o => o.name === h.name);
+                        const sub = (hData.unit === 'cm') ? hData.price * numLen * h.qty : hData.price * h.qty;
+                        total += sub; detail.push({ name: h.name, val: sub, qty: h.qty });
+                    });
+                }
+                const shelfTotal = (Number(item.shelfQty) || 0) * (item.type==='base'?400:300);
+                if(shelfTotal > 0) { total += shelfTotal; detail.push({ name: "加購層板", val: shelfTotal, qty: item.shelfQty }); }
+            } else if (item.type === 'appliance') {
+                Object.entries(item.applianceConfigs).forEach(([cat, conf]) => {
+                    if (conf.mode === 'none') return;
+                    let appSub = calculateCatSubtotal(item, cat);
+                    const qty = Number(conf.qty) || 0;
+                    total += appSub;
+                    // 修改：只要 appSub > 0 或者模式為 'carry' (自裝)，都加入清單
+                    if(appSub > 0 || conf.mode === 'carry') {
+                        let displayName = `${cat}(${{brand:'品牌', install:'代裝', carry:'自裝'}[conf.mode]})`;
+                        if(conf.mode === 'brand' && conf.name) {
+                            displayName += ` - ${conf.name}`;
+                        } else if (cat === '特殊電器' && conf.mode === 'install' && conf.name) {
+                             displayName += ` - ${conf.name}`;
+                        }
+                        
+                        // 生成詳細內容
+                        let details = [];
+                        if(cat === '水龍頭' && Number(conf.hoseQty) > 0) details.push(`高壓軟管: ${conf.hoseQty}條`);
+                        if(cat === '瓦斯爐') {
+                            if(conf.mode === 'brand') details.push(`氣體: ${conf.gasType}`);
+                            if(conf.regulator !== '無') details.push(`調整器: ${conf.regulator}`);
+                            if(Number(conf.pipeLen) > 0) details.push(`瓦斯管: ${conf.pipeLen}cm`);
+                        }
+                        if(cat.includes('油煙機') && conf.ductType !== '無') {
+                            details.push(`排風管: ${conf.ductType}`);
+                            if(conf.ductType.includes('白鐵')) {
+                                     if(Number(conf.ductLen) > 0) details.push(`長度: ${conf.ductLen}cm`);
+                            } else {
+                                     if(Number(conf.ductQty) > 0) details.push(`數量: ${conf.ductQty}`);
+                            }
+                        }
+                        
+                        if(details.length > 0) {
+                            displayName += `<br><span class="text-xs text-slate-400 font-normal pl-2">${details.join(' / ')}</span>`;
+                        }
+
+                        detail.push({ name: displayName, val: appSub, qty: qty });
+                    }
+                });
+                item.otherItems.forEach(oi => {
+                    const sub = oi.price * oi.qty;
+                    total += sub;
+                    detail.push({ name: `其他-${oi.name}`, val: sub, qty: oi.qty });
+                });
+            }
+
+            if (item.sideType !== 'none' && item.type !== 'appliance') {
+                const sideCat = (item.type === 'high') ? 'high' : (item.type === 'wall' ? 'wall' : 'base');
+                const sPrice = DATA.sidePricing[item.sideType][sideCat]?.[item.sideMaterial] || 0;
+                const sTotal = sPrice * (Number(item.sideQty)||0);
+                total += sTotal; if (sTotal > 0) detail.push({ name: `側邊處理`, val: sTotal, qty: item.sideQty });
+            }
+            return { total, detail };
+        }
+
+        function calculateCatSubtotal(item, catName) {
+            const conf = item.applianceConfigs[catName];
+            if (!conf || conf.mode === 'none') return 0;
+            let sub = 0;
+            const qty = Number(conf.qty) || 0;
+            
+            if (conf.mode === 'brand') sub += (Number(conf.price) || 0) * qty;
+            else if (conf.mode === 'install') {
+                const baseInstall = DATA.applianceCategories.find(c=>c.name===catName).installFee;
+                const fee = (catName === '特殊電器') ? (Number(conf.price) || 0) : baseInstall;
+                sub += fee * qty;
+            }
+
+            if (catName === '水龍頭') {
+                sub += (Number(conf.hoseQty) || 0) * 100;
+            } else if (catName === '瓦斯爐') {
+                let regulatorPrice = conf.regulator.includes('1500') ? 1500 : (conf.regulator.includes('500') ? 500 : 0);
+                sub += regulatorPrice * qty; 
+                sub += (Number(conf.pipeLen) || 0) * qty; 
+            } else if (catName.includes('油煙機')) {
+                if (conf.ductType.includes('白鐵')) {
+                      sub += 25 * (Number(conf.ductLen) || 0);
+                } else {
+                      let unit = conf.ductType.includes('12') ? 160 : (conf.ductType.includes('24') ? 320 : 0);
+                      sub += unit * (Number(conf.ductQty) || 0);
+                }
+            }
+            return sub;
+        }
+
+        function renderInputs(item) {
+            const sideCat = (item.type === 'high') ? 'high' : (item.type === 'wall' ? 'wall' : 'base');
+            const sideMaterials = Object.keys(DATA.sidePricing[item.sideType]?.[sideCat] || {});
+
+            const sideHTML = `
+                <div class="bg-white p-7 rounded-[2rem] border shadow-sm flex flex-col h-full font-black">
+                    <h4 class="text-sm font-black text-slate-400 uppercase mb-5 italic font-black flex items-center gap-2"><i data-lucide="shield-check" size="18"></i> 兩側處理配置</h4>
+                    <select class="w-full bg-slate-50 p-4 rounded-xl text-base font-black border-none shadow-md outline-none" onchange="updateItemField(${item.id}, 'sideType', this.value)">
+                        <option value="none" ${item.sideType==='none'?'selected':''}>無處理</option>
+                        <option value="sticker" ${item.sideType==='sticker'?'selected':''}>側貼</option>
+                        <option value="panel" ${item.sideType==='panel'?'selected':''}>側封板</option>
+                    </select>
+                    ${item.sideType!=='none' ? `
+                    <div class="animate-in slide-in-from-top-1 space-y-4 mt-5 pt-5 border-t border-slate-200">
+                        <div><label class="text-xs text-slate-400 uppercase font-black block mb-2 px-1">材質設定</label>
+                        <select class="w-full bg-white border border-slate-100 p-3 rounded-xl text-sm font-black outline-none" onchange="updateItemField(${item.id},'sideMaterial',this.value)">
+                            ${sideMaterials.map(m=>(`<option ${item.sideMaterial===m?'selected':''}>${m}</option>`)).join('')}
+                        </select></div>
+                        <div><label class="text-xs text-slate-400 uppercase font-black block mb-2 px-1">數量</label>
+                        <div class="dual-input-container border-2 border-slate-100 shadow-none px-2 rounded-xl">
+                            <button onclick="stepItemField(${item.id},'sideQty',-1)" class="dual-input-btn p-1 flex-shrink-0 text-slate-300"><i data-lucide="minus-circle" size="24"></i></button>
+                            <input id="sideQty-${item.id}" type="text" inputmode="tel" class="w-full text-center text-lg font-black bg-transparent border-none outline-none" value="${item.sideQty}" oninput="updateItemField(${item.id},'sideQty',this.value)">
+                            <button onclick="stepItemField(${item.id},'sideQty',1)" class="dual-input-btn p-1 flex-shrink-0 text-blue-500"><i data-lucide="plus-circle" size="24"></i></button>
+                        </div></div>
+                    </div>` : ''}
+                </div>`;
+
+            const handleHTML = `
+                <div class="bg-white p-8 rounded-[2rem] border shadow-sm flex flex-col gap-5 h-full font-black">
+                    <h4 class="text-sm font-black text-slate-400 uppercase italic tracking-widest font-bold mb-2">把手配置</h4>
+                    <select class="w-full bg-slate-50 p-4 rounded-xl text-sm font-bold border-none outline-none font-black shadow-sm" onchange="updateItemField(${item.id}, 'handleType', this.value)">
+                        ${DATA.handleOptions.map(h => `<option ${item.handleType===h.name?'selected':''}>${h.name}</option>`).join('')}
+                    </select>
+                    <div><label class="text-xs text-slate-400 font-black block mb-2 uppercase tracking-widest font-black">數量</label>
+                    <div class="dual-input-container border-2 border-slate-100 font-black">
+                         <button onclick="stepItemField(${item.id},'handleQty',-1)" class="dual-input-btn"><i data-lucide="minus-circle" size="24"></i></button>
+                         <input id="handleQty-${item.id}" type="text" inputmode="tel" class="w-full text-center text-lg font-black bg-transparent border-none outline-none font-black" value="${item.handleQty}" oninput="updateItemField(${item.id},'handleQty',this.value)">
+                         <button onclick="stepItemField(${item.id},'handleQty',1)" class="dual-input-btn"><i data-lucide="plus-circle" size="24"></i></button>
+                    </div></div>
+                </div>`;
+
+            const kickHTML = `
+                <div class="bg-white p-8 rounded-[2rem] border shadow-sm flex flex-col gap-5 h-full font-black">
+                    <h4 class="text-sm font-black text-slate-400 uppercase italic tracking-widest font-bold mb-2">踢腳配置</h4>
+                    <select class="w-full bg-slate-50 p-4 rounded-xl text-sm font-bold border-none outline-none font-black shadow-sm" onchange="updateItemField(${item.id}, 'kickplateType', this.value)">
+                        ${DATA.kickplateOptions.map(k => `<option ${item.kickplateType===k.name?'selected':''}>${k.name}</option>`).join('')}
+                    </select>
+                    <div><label class="text-xs text-slate-400 font-black block mb-2 uppercase tracking-widest font-black">數量</label>
+                    <div class="dual-input-container border-2 border-slate-100 font-black">
+                         <button onclick="stepItemField(${item.id},'kickplateQty',-1)" class="dual-input-btn"><i data-lucide="minus-circle" size="24"></i></button>
+                         <input id="kickplateQty-${item.id}" type="text" inputmode="tel" class="w-full text-center text-lg font-black bg-transparent border-none outline-none font-black" value="${item.kickplateQty}" oninput="updateItemField(${item.id},'kickplateQty',this.value)">
+                         <button onclick="stepItemField(${item.id},'kickplateQty',1)" class="dual-input-btn"><i data-lucide="plus-circle" size="24"></i></button>
+                    </div></div>
+                </div>`;
+
+            const shelfBaseHTML = `
+                <div class="bg-white p-8 rounded-[2rem] border shadow-sm flex flex-col gap-5 h-full font-black">
+                    <h4 class="text-sm font-black text-slate-400 uppercase italic tracking-widest font-bold mb-2">加購層板 ($${item.type==='base'?'400':'300'})</h4>
+                    <div class="dual-input-container bg-slate-50 border-none shadow-none w-full px-3 h-[64px]">
+                        <button onclick="stepItemField(${item.id},'shelfQty',-1)" class="dual-input-btn p-1 flex-shrink-0 text-blue-600"><i data-lucide="minus-circle" size="28"></i></button>
+                        <input id="shelfQty-${item.id}" type="text" inputmode="tel" class="w-full text-center text-2xl font-black bg-transparent border-none outline-none font-black" value="${item.shelfQty}" oninput="updateItemField(${item.id},'shelfQty',this.value)">
+                        <button onclick="stepItemField(${item.id},'shelfQty',1)" class="dual-input-btn p-1 flex-shrink-0 text-blue-600"><i data-lucide="plus-circle" size="28"></i></button>
+                    </div>
+                </div>`;
+
+            const hwHTML = `
+                <div class="bg-white p-8 rounded-3xl border shadow-sm h-full flex flex-col gap-4 font-black">
+                    <h4 class="text-sm font-black text-slate-400 uppercase mb-2 italic tracking-widest font-bold">五金配件/小件</h4>
+                    <select class="w-full bg-slate-50 p-4 rounded-xl text-sm font-bold border-none outline-none shadow-sm font-black" onchange="if(this.value){addHardware(${item.id}, this.value); this.value='';}">
+                        <option value="">+ 選擇配件/小件...</option>
+                        <optgroup label="五金配件">${DATA.hardwareOptions.map(h => `<option value="${h.name}">${h.name}</option>`).join('')}</optgroup>
+                        <optgroup label="五金小件">${DATA.smallHardwareOptions.map(h => `<option value="${h.name}">${h.name}</option>`).join('')}</optgroup>
+                    </select>
+                    <div id="hwScroll-${item.id}" class="space-y-5 mt-2 overflow-y-auto max-h-60 custom-scrollbar pr-2">
+                        ${item.selectedHardware.map(h => { 
+                            const hD = DATA.hardwareOptions.find(o=>o.name===h.name); 
+                            return `<div class="bg-slate-50 p-4 rounded-2xl border-2 border-slate-100 relative flex flex-col gap-4">
+                                <div class="flex justify-between items-center font-black"><span class="text-sm uppercase text-blue-600 font-bold">${h.name}</span><button onclick="const i=items.find(x=>x.id===${item.id}); i.selectedHardware=i.selectedHardware.filter(x=>x.id!==${h.id}); render();" class="text-slate-300 hover:text-red-500"><i data-lucide="trash-2" size="20"></i></button></div>
+                                <select class="bg-white border border-slate-200 p-3 rounded-xl text-sm font-black outline-none w-full" onchange="const i=items.find(x=>x.id===${item.id}); i.selectedHardware.find(o=>o.id===${h.id}).size=this.value; render();">${Object.keys(hD.priceMap).map(s=>(`<option ${h.size===s?'selected':''}>${s}</option>`))}</select>
+                                <div class="dual-input-container h-12 w-full border-2 border-slate-100 shadow-none px-2 rounded-xl"><button onclick="const i=items.find(x=>x.id===${item.id}); i.selectedHardware.find(o=>o.id===${h.id}).qty=Math.max(1,h.qty-1); render();" class="dual-input-btn p-1"><i data-lucide="minus-circle" size="22"></i></button><input id="hwQty-${item.id}-${h.id}" type="text" inputmode="tel" class="w-full text-center text-base font-black bg-transparent border-none outline-none" value="${h.qty}" oninput="const i=items.find(x=>x.id===${item.id}); i.selectedHardware.find(o=>o.id===${h.id}).qty=this.value; render();"><button onclick="const i=items.find(x=>x.id===${item.id}); i.selectedHardware.find(o=>o.id===${h.id}).qty++; render();" class="dual-input-btn p-1"><i data-lucide="plus-circle" size="22"></i></button></div>
+                            </div>` 
+                        }).join('')}
+                        ${item.selectedSmallHardware.map(h => {
+                            return `<div class="bg-slate-50 p-4 rounded-2xl border-2 border-slate-100 relative flex flex-col gap-4">
+                                <div class="flex justify-between items-center font-black"><span class="text-sm uppercase text-emerald-600 font-bold">${h.name}</span><button onclick="const i=items.find(x=>x.id===${item.id}); i.selectedSmallHardware=i.selectedSmallHardware.filter(x=>x.id!==${h.id}); render();" class="text-slate-300 hover:text-red-500"><i data-lucide="trash-2" size="20"></i></button></div>
+                                <div class="text-xs text-slate-400 font-bold text-right">$${h.price}</div>
+                                <div class="dual-input-container h-12 w-full border-2 border-slate-100 shadow-none px-2 rounded-xl"><button onclick="const i=items.find(x=>x.id===${item.id}); i.selectedSmallHardware.find(o=>o.id===${h.id}).qty=Math.max(1,h.qty-1); render();" class="dual-input-btn p-1"><i data-lucide="minus-circle" size="22"></i></button><input id="hwQty-${item.id}-${h.id}" type="text" inputmode="tel" class="w-full text-center text-base font-black bg-transparent border-none outline-none" value="${h.qty}" oninput="const i=items.find(x=>x.id===${item.id}); i.selectedSmallHardware.find(o=>o.id===${h.id}).qty=this.value; render();"><button onclick="const i=items.find(x=>x.id===${item.id}); i.selectedSmallHardware.find(o=>o.id===${h.id}).qty++; render();" class="dual-input-btn p-1"><i data-lucide="plus-circle" size="22"></i></button></div>
+                            </div>`
+                        }).join('')}
+                    </div>
+                </div>`;
+
+            const isBase = item.type === 'base';
+            const isWall = item.type === 'wall';
+            const isStone = ["凱特石", "三星/LG石", "石英石1", "石英石2"].includes(item.countertop);
+            const isLaminate = item.countertop === '美耐板';
+            const procs = isBase ? (DATA.countertopProcessings[item.countertop.includes('不鏽鋼')?'不鏽鋼':item.countertop.includes('美耐板')?'美耐板':item.countertop.includes('石英石')?'石英石':'人造石'] || []) : [];
+            const numLen = Number(item.length) || 0;
+            const pureWall = isPureWallQuote();
+
+            if (isBase || isWall) {
+                // 水槽區域 HTML 邏輯
+                let sinkSectionHTML = '';
+                if (isBase) {
+                    const isStainless = item.countertop.includes('不鏽鋼');
+                    
+                    sinkSectionHTML = `<div class="bg-white p-8 rounded-[2.5rem] border shadow-sm flex flex-col h-full font-black">
+                        <h4 class="text-sm font-black text-slate-400 uppercase mb-6 italic flex items-center gap-3"><i data-lucide="droplets" size="18"></i> 水槽配置</h4>
+                        
+                        ${isStainless ? `
+                        <div class="mb-5">
+                            <label class="text-xs text-slate-400 uppercase font-black block mb-2">標準規格 (不鏽鋼專用)</label>
+                            <select class="w-full bg-slate-50 p-4 rounded-xl text-sm font-black shadow-md outline-none" onchange="updateItemField(${item.id}, 'selectedSink', this.value)">
+                                <option value="none">無</option>
+                                ${DATA.sinkOptions.map(s => `<option value="${s.name}" ${item.selectedSink===s.name?'selected':''}>${s.name} ($${s.price})</option>`).join('')}
+                            </select>
+                        </div>` : ''}
+
+                        <div class="space-y-3 mb-5">
+                            ${item.customSinks.map(s => `
+                            <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 shadow-sm relative">
+                                <div class="font-black text-slate-800 mb-1">${s.name}</div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-xs text-slate-500 font-bold">$${s.price} x ${s.qty}</span>
+                                    <span class="text-sm font-black text-blue-600">$${s.price * s.qty}</span>
+                                </div>
+                                <button onclick="removeSink(${item.id}, ${s.id})" class="absolute top-2 right-2 text-red-400"><i data-lucide="trash-2" size="16"></i></button>
+                            </div>`).join('')}
+                        </div>
+                        
+                        ${item.tempSink.active ? `
+                            <div class="bg-blue-50/80 p-4 rounded-2xl border border-blue-100 animate-in zoom-in-95">
+                                <input type="text" placeholder="名稱" class="w-full p-2 mb-2 text-sm rounded-lg border-none shadow-sm outline-none font-black" value="${item.tempSink.name}" oninput="const i=items.find(x=>x.id===${item.id}); i.tempSink.name=this.value;">
+                                <div class="flex gap-2 mb-2">
+                                    <div class="w-2/3">
+                                        <input type="text" inputmode="tel" placeholder="單價" class="w-full p-2 text-sm rounded-lg border-none shadow-sm outline-none font-black" value="${item.tempSink.price}" oninput="const i=items.find(x=>x.id===${item.id}); i.tempSink.price=this.value;">
+                                    </div>
+                                    <div class="w-1/3">
+                                        <input type="text" inputmode="tel" placeholder="數量" class="w-full p-2 text-sm rounded-lg border-none shadow-sm outline-none font-black text-center" value="${item.tempSink.qty}" oninput="const i=items.find(x=>x.id===${item.id}); i.tempSink.qty=this.value;">
+                                    </div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button onclick="saveSink(${item.id})" class="flex-1 bg-blue-600 text-white py-2 rounded-lg text-xs font-black">儲存</button>
+                                    <button onclick="const i=items.find(x=>x.id===${item.id}); i.tempSink.active=false; render();" class="flex-1 bg-slate-200 text-slate-500 py-2 rounded-lg text-xs font-black">取消</button>
+                                </div>
+                            </div>
+                        ` : `
+                            <button onclick="const i=items.find(x=>x.id===${item.id}); i.tempSink.active=true; render();" class="w-full border-2 border-dashed border-slate-200 text-slate-400 py-3 rounded-xl font-black text-sm hover:bg-slate-50">+ 新增自定義水槽</button>
+                        `}
+                    </div>`;
+                }
+
+                return `<div class="space-y-14 font-black">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-10">
+                        <div class="flex flex-col items-start"><label class="text-sm font-black text-slate-400 mb-3 block uppercase italic tracking-widest">長度 (CM)</label><div class="relative w-full"><input id="length-${item.id}" type="text" inputmode="tel" class="w-full bg-slate-50 border-none rounded-2xl p-5 text-4xl font-black text-blue-600 outline-none h-[64px] shadow-inner text-center" value="${item.length}" oninput="updateLength(${item.id}, this.value)"><span class="absolute right-6 top-1/2 -translate-y-1/2 text-slate-300 font-bold uppercase text-lg">cm</span></div></div>
+                        <div class="flex flex-col items-start">
+                            <label class="text-sm font-black text-slate-400 mb-3 block uppercase italic tracking-widest">材質單價 ($/CM) 
+                                ${numLen > 0 && numLen < 180 ? '<span class="text-red-500 ml-2 animate-pulse text-xs">不足180公分</span>' : ''}
+                                ${isWall && pureWall ? '<span class="text-red-500 ml-2 animate-pulse text-xs">純吊櫃</span>' : ''}
+                            </label>
+                            <div class="relative w-full">
+                                <input id="rate-${item.id}" type="text" inputmode="tel" class="w-full bg-white border-2 border-blue-100 rounded-2xl p-5 text-4xl font-black text-blue-600 outline-none h-[64px] shadow-sm text-center focus:ring-2 focus:ring-blue-500" value="${item.rate}" oninput="updateItemField(${item.id}, 'rate', this.value)">
+                                <span class="absolute right-6 top-1/2 -translate-y-1/2 text-slate-300 font-bold uppercase text-lg">/cm</span>
+                            </div>
+                        </div>
+                        <div class="flex flex-col items-start"><label class="text-sm font-black text-slate-400 mb-2 block uppercase">L型處理</label><label class="flex items-center gap-5 cursor-pointer p-5 bg-white rounded-2xl border-2 border-slate-100 shadow-sm w-full h-[64px]"><input id="isL-${item.id}" type="checkbox" class="w-8 h-8 rounded-lg accent-blue-600" ${item.isL?'checked':''} onchange="updateItemField(${item.id},'isL',this.checked)"><div><span class="text-base font-black text-slate-800">轉角扣除</span><div class="text-xs text-slate-400 font-bold">(扣除 ${isBase?'30':'38'}cm)</div></div></label></div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-10">
+                        <div><label class="text-sm text-slate-400 mb-2 block font-black uppercase">桶身材質</label><select class="w-full bg-white border-2 border-slate-100 p-5 rounded-2xl text-sm font-black h-[60px] outline-none" onchange="updateItemField(${item.id}, 'body', this.value)">${Object.keys(DATA.baseCabinetMatrix).map(b => `<option ${item.body===b?'selected':''}>${b}</option>`).join('')}</select></div>
+                        ${isBase ? `<div><label class="text-sm text-slate-400 mb-2 block font-black uppercase">檯面材質</label><select class="w-full bg-white border-2 border-slate-100 p-5 rounded-2xl text-sm font-black h-[60px] outline-none" onchange="updateItemField(${item.id}, 'countertop', this.value)">${Object.keys(DATA.baseCabinetMatrix["木芯板(白)"]).map(c => `<option ${item.countertop===c?'selected':''}>${c}</option>`).join('')}</select></div>` : `<div><label class="text-sm text-slate-400 mb-2 block font-black uppercase tracking-widest">高度規格</label><select class="w-full bg-white border-2 border-slate-100 p-5 rounded-2xl text-sm font-black h-[60px] outline-none" onchange="updateItemField(${item.id}, 'wallSpec', this.value)">${DATA.wallSpecs.map(s => `<option ${item.wallSpec===s.label?'selected':''}>${s.label}</option>`).join('')}</select></div>`}
+                        <div><label class="text-sm text-slate-400 mb-2 block font-black uppercase">門板等級</label><select class="w-full bg-white border-2 border-slate-100 p-5 rounded-2xl text-sm font-black h-[60px] outline-none" onchange="updateItemField(${item.id}, 'door', this.value)">${Object.keys(DATA.doorUpgrades).map(d => `<option ${item.door===d?'selected':''}>${d}</option>`).join('')}</select></div>
+                    </div>${isBase ? `
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-12">
+                        ${sinkSectionHTML}
+                        <div class="bg-white p-8 rounded-[2.5rem] border shadow-sm flex flex-col h-full font-black"><h4 class="text-sm font-black text-slate-400 uppercase mb-6 italic flex items-center gap-3"><i data-lucide="wrench" size="18"></i> 檯面加工</h4><div id="countertopProcScroll-${item.id}" class="space-y-3 overflow-y-auto max-h-72 custom-scrollbar pr-2">${procs.map(p => `<div class="flex justify-between items-center bg-slate-50 p-4 rounded-xl text-sm border border-slate-100 shadow-sm"><span>${p.name}</span><div class="flex items-center gap-3"><button onclick="updateProc(${item.id},'processing','${p.name}',-1)" class="text-slate-300"><i data-lucide="minus-circle" size="22"></i></button><span class="font-black text-blue-600 w-6 text-center">${item.processing[p.name]||0}</span><button onclick="updateProc(${item.id},'processing','${p.name}',1)" class="text-blue-500"><i data-lucide="plus-circle" size="22"></i></button></div></div>`).join('')}</div></div>
+                        <div class="bg-white p-8 rounded-[2.5rem] border shadow-sm flex flex-col h-full font-black"><h4 class="text-sm font-black text-slate-400 uppercase mb-6 italic flex items-center gap-3"><i data-lucide="layers" size="18"></i> 櫃體加工</h4><div id="cabinetProcScroll-${item.id}" class="space-y-3 overflow-y-auto max-h-72 custom-scrollbar pr-2">${DATA.cabinetProcessing.map(p => `<div class="flex justify-between items-center bg-slate-50 p-4 rounded-xl text-sm border border-slate-100 shadow-sm"><span>${p.name}</span><div class="flex items-center gap-3"><button onclick="updateProc(${item.id},'cabinet','${p.name}',-1)" class="text-slate-300"><i data-lucide="minus-circle" size="22"></i></button><span class="font-black text-emerald-600 w-6 text-center">${item.cabinetProcessing[p.name]||0}</span><button onclick="updateProc(${item.id},'cabinet','${p.name}',1)" class="text-emerald-500"><i data-lucide="plus-circle" size="22"></i></button></div></div>`).join('')}</div></div>
+                    </div>` : `
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-10 items-start">
+                        <div class="bg-white p-8 rounded-[2.5rem] border shadow-sm flex flex-col h-full font-black"><h4 class="text-sm font-black text-slate-400 uppercase mb-6 italic flex items-center gap-3"><i data-lucide="layers" size="18"></i> 櫃體選配加工</h4><div id="cabinetProcScroll-${item.id}" class="space-y-3 overflow-y-auto max-h-72 custom-scrollbar pr-2">${DATA.cabinetProcessing.map(p => `<div class="flex justify-between items-center bg-slate-50 p-4 rounded-xl text-sm border border-slate-100 shadow-sm"><span>${p.name}</span><div class="flex items-center gap-3"><button onclick="updateProc(${item.id},'cabinet','${p.name}',-1)" class="text-slate-300"><i data-lucide="minus-circle" size="22"></i></button><span class="font-black text-emerald-600 w-6 text-center">${item.cabinetProcessing[p.name]||0}</span><button onclick="updateProc(${item.id},'cabinet','${p.name}',1)" class="text-emerald-500"><i data-lucide="plus-circle" size="22"></i></button></div></div>`).join('')}</div></div>
+                        ${sideHTML}
+                        ${handleHTML}
+                    </div>`}
+
+                    <div class="space-y-10">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-10 items-start">
+                            ${isBase ? sideHTML : shelfBaseHTML}
+                            ${isBase ? handleHTML : '<div class="hidden md:block"></div>'}
+                            ${isBase ? kickHTML : '<div class="hidden md:block"></div>'}
+                        </div>
+                        ${isBase ? `
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-10 items-start">
+                            ${shelfBaseHTML}
+                            ${hwHTML}
+                            <div class="hidden md:block"></div>
+                        </div>` : ''}
+                    </div>
+                </div>`;
+            }
+            return ``;
+        }
+
+        function render() {
+            const activeId = document.activeElement ? document.activeElement.id : null;
+            const selectionStart = document.activeElement ? document.activeElement.selectionStart : null;
+            const selectionEnd = document.activeElement ? document.activeElement.selectionEnd : null;
+            const scrollPos = window.pageYOffset;
+
+            const innerScrollStates = {};
+            items.forEach(it => {
+                ['cabinetProcScroll', 'countertopProcScroll', 'hwScroll'].forEach(prefix => {
+                    const el = document.getElementById(`${prefix}-${it.id}`);
+                    if (el) innerScrollStates[`${prefix}-${it.id}`] = el.scrollTop;
+                });
+            });
+
+            const container = document.getElementById('items-container');
+            const printList = document.getElementById('print-items-list');
+            if (!container) return;
+            
+            container.innerHTML = ''; printList.innerHTML = '';
+            let totalAll = 0;
+
+            const typeOrder = ['base', 'wall', 'high', 'piece', 'appliance'];
+            const typeNames = { base: '下櫃', wall: '吊櫃', high: '高櫃', piece: '件式模組', appliance: '電器/水龍頭/其他' };
+            const sortedItems = [...items].sort((a, b) => typeOrder.indexOf(a.type) - typeOrder.indexOf(b.type));
+
+            sortedItems.forEach((item, idx) => {
+                const { total, detail } = calculate(item); totalAll += total;
+                const card = document.createElement('div');
+                card.className = "bg-white rounded-[3rem] shadow-md border border-slate-200 overflow-hidden mb-12 flex flex-col";
+                let theme = item.type==='base'?'bg-slate-800':item.type==='wall'?'bg-indigo-700':item.type==='high'?'bg-orange-600':item.type==='piece'?'bg-emerald-700':'bg-sky-700';
+                
+                let contentHTML = '';
+                if (item.type === 'appliance') {
+                    contentHTML = `<div class="space-y-8">
+                        ${DATA.applianceCategories.map(cat => {
+                            const conf = item.applianceConfigs[cat.name] || { mode: 'none', name: '', price: '0', qty: '0', hoseQty: '0', pipeLen: '0', regulator: '無', ductType: '無', ductQty: '0', ductLen: '0', gasType: '液化' };
+                            const sub = calculateCatSubtotal(item, cat.name);
+                            const isDuctActive = conf.ductType !== '無';
+                            const isRegActive = conf.regulator !== '無';
+                            
+                            return `<div class="bg-white border border-slate-200 rounded-[2rem] p-8 shadow-sm">
+                                <div class="flex flex-col md:flex-row justify-between items-center gap-6">
+                                    <div class="flex items-center gap-4 w-full md:w-1/3"><h4 class="text-xl font-black text-slate-800">${cat.name}</h4>${sub > 0 ? `<span class="bg-blue-100 text-blue-700 px-4 py-1.5 rounded-full text-xs font-black">小計: $${sub.toLocaleString()}</span>` : ''}</div>
+                                    <div class="flex bg-slate-100 p-1.5 rounded-2xl w-full md:w-auto">${['none', 'brand', 'install', 'carry'].map(m => `<button onclick="setAppMode(${item.id},'${cat.name}','${m}')" class="flex-1 px-6 py-3 text-sm font-black rounded-xl transition-all ${conf.mode===m ? 'bg-blue-600 text-white' : 'text-slate-400'}">${{none:'無', brand:'品牌', install:'代裝', carry:'自裝'}[m]}</button>`).join('')}</div>
+                                </div>
+                                ${ (conf.mode !== 'none') ? `
+                                    <div class="mt-8 pt-8 border-t border-slate-100 animate-in slide-in-from-top-2 space-y-8">
+                                                
+                                            <!-- 基本模式渲染 (品牌/特殊電器模式) -->
+                                            ${ (conf.mode === 'brand' || (cat.name === '特殊電器' && conf.mode === 'install')) ? `
+                                                <div class="grid grid-cols-4 gap-8">
+                                                    ${ (cat.name === '特殊電器' && conf.mode === 'install') ? '' : `
+                                                    <div class="col-span-2">
+                                                        <label class="text-xs font-black text-slate-400 block mb-3 uppercase">品牌 型號</label>
+                                                        <input id="app-name-${item.id}-${cat.name}" type="text" class="w-full bg-slate-50 p-4 rounded-xl text-base font-black outline-none border-2 border-transparent focus:border-blue-500" value="${conf.name}" onchange="updateAppConfig(${item.id},'${cat.name}','name',this.value)">
+                                                    </div>`}
+                                                    <div class="${(cat.name === '特殊電器' && conf.mode === 'install') ? 'col-span-3' : 'col-span-1'}">
+                                                        <label class="text-xs font-black text-slate-400 block mb-3 uppercase">報價金額</label>
+                                                        <input id="app-price-${item.id}-${cat.name}" type="text" inputmode="tel" class="w-full bg-slate-50 p-4 rounded-xl text-base font-black outline-none border-2 border-slate-100" value="${conf.price}" onchange="updateAppConfig(${item.id},'${cat.name}','price',this.value);">
+                                                    </div>
+                                                    <div class="col-span-1">
+                                                        <label class="text-xs font-black text-slate-400 block mb-3 uppercase">數量</label>
+                                                        <div class="dual-input-container border-2 border-slate-100">
+                                                            <button onclick="stepAppConfig(${item.id},'${cat.name}','qty',-1)" class="dual-input-btn"><i data-lucide="minus-circle" size="24"></i></button>
+                                                            <input id="app-qty-${item.id}-${cat.name}" type="text" inputmode="tel" class="w-full text-center text-lg font-black bg-transparent outline-none" value="${conf.qty}" onchange="updateAppConfig(${item.id},'${cat.name}','qty',this.value);">
+                                                            <button onclick="stepAppConfig(${item.id},'${cat.name}','qty',1)" class="dual-input-btn"><i data-lucide="plus-circle" size="24"></i></button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                ` : ( (conf.mode === 'install' && !['瓦斯爐', '抽油煙機', '近吸/倒T式油煙機', '特殊電器', '水龍頭'].includes(cat.name)) ? `
+                                                <div class="grid grid-cols-2 gap-8">
+                                                    <div class="col-span-1">
+                                                         <div class="bg-orange-50 p-6 rounded-2xl border border-orange-100 flex items-center justify-between h-full">
+                                                            <div><span class="text-sm font-black text-orange-600 block uppercase italic">代裝工資</span><span class="text-2xl font-black text-orange-700">$${cat.installFee} /台</span></div>
+                                                            <div class="w-36">
+                                                                <div class="dual-input-container border-orange-200">
+                                                                    <button onclick="stepAppConfig(${item.id},'${cat.name}','qty',-1)" class="p-1 text-orange-400"><i data-lucide="minus-circle" size="24"></i></button>
+                                                                    <input type="text" inputmode="tel" class="w-full text-center text-lg font-black text-orange-700 bg-transparent outline-none" value="${conf.qty}" onchange="updateAppConfig(${item.id},'${cat.name}','qty',this.value);">
+                                                                    <button onclick="stepAppConfig(${item.id},'${cat.name}','qty',1)" class="p-1 text-orange-400"><i data-lucide="plus-circle" size="24"></i></button>
+                                                                </div>
+                                                            </div>
+                                                         </div>
+                                                    </div>
+                                                </div>
+                                                ` : '') }
+
+                                    <!-- 水龍頭渲染 -->
+                                    ${cat.name === '水龍頭' ? `
+                                            <div class="grid grid-cols-2 gap-8 pt-4">
+                                                ${conf.mode === 'install' ? `
+                                                <div class="col-span-1 bg-orange-50 p-6 rounded-2xl border border-orange-100 flex items-center justify-between">
+                                                    <div><span class="text-xs font-black text-orange-600 block mb-1">代裝工資</span><span class="text-xl font-black text-orange-700">$${cat.installFee}/台</span></div>
+                                                    <div class="w-36">
+                                                        <div class="dual-input-container border-orange-200">
+                                                            <button onclick="stepAppConfig(${item.id},'${cat.name}','qty',-1)" class="p-1 text-orange-400"><i data-lucide="minus-circle" size="24"></i></button>
+                                                            <input type="text" inputmode="tel" class="w-full text-center text-lg font-black text-orange-700 bg-transparent outline-none" value="${conf.qty}" onchange="updateAppConfig(${item.id},'${cat.name}','qty',this.value);">
+                                                            <button onclick="stepAppConfig(${item.id},'${cat.name}','qty',1)" class="p-1 text-orange-400"><i data-lucide="plus-circle" size="24"></i></button>
+                                                        </div>
+                                                    </div>
+                                                </div>` : ''}
+                                                <div class="col-span-1 bg-blue-50/50 p-6 rounded-2xl flex items-center justify-between">
+                                                    <div><span class="text-base font-bold text-slate-700 block mb-1">選購耗材</span><span class="text-xs font-black text-blue-600">高壓軟管 ($100/條)</span></div>
+                                                    <div class="w-36">
+                                                        <div class="dual-input-container border-blue-200">
+                                                            <button onclick="stepAppConfig(${item.id},'${cat.name}','hoseQty',-1)" class="p-1 text-blue-400"><i data-lucide="minus-circle" size="24"></i></button>
+                                                            <input type="text" inputmode="tel" class="w-full text-center text-lg font-black text-blue-700 bg-transparent outline-none" value="${conf.hoseQty}" onchange="updateAppConfig(${item.id},'${cat.name}','hoseQty',this.value);">
+                                                            <button onclick="stepAppConfig(${item.id},'${cat.name}','hoseQty',1)" class="p-1 text-blue-400"><i data-lucide="plus-circle" size="24"></i></button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                    ` : ''}
+
+                                    <!-- 瓦斯爐品牌模式：氣體按鍵 -->
+                                    ${cat.name === '瓦斯爐' && conf.mode === 'brand' ? `
+                                            <div class="grid grid-cols-2 gap-8 pt-4">
+                                                <div class="col-span-1">
+                                                    <label class="text-xs font-black text-slate-400 block mb-3 uppercase">氣體種類 <span class="text-red-500">*</span></label>
+                                                    <div class="flex gap-2 bg-slate-100 p-1.5 rounded-2xl">
+                                                        ${['液化', '天然'].map(g => `<button onclick="updateAppConfig(${item.id},'${cat.name}','gasType','${g}')" class="flex-1 py-3 rounded-xl font-black transition-all ${conf.gasType===g ? 'bg-blue-600 text-white' : 'text-slate-400'}">${g}</button>`).join('')}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                    ` : ''}
+
+                                    <!-- 瓦斯爐代裝模式 -->
+                                    ${cat.name === '瓦斯爐' && conf.mode === 'install' ? `
+                                            <div class="grid grid-cols-3 gap-8 pt-4">
+                                                <div class="bg-orange-50 p-6 rounded-2xl border border-orange-100 flex items-center justify-between">
+                                                    <div><span class="text-xs font-black text-orange-600 block italic">代裝工資數量</span><span class="text-xl font-black text-orange-700">$${cat.installFee}/台</span></div>
+                                                    <div class="w-28">
+                                                        <div class="dual-input-container border-orange-200 h-12">
+                                                            <button onclick="stepAppConfig(${item.id},'${cat.name}','qty',-1)" class="p-1 text-orange-400"><i data-lucide="minus-circle" size="20"></i></button>
+                                                            <input type="text" inputmode="tel" class="w-full text-center text-sm font-black text-orange-700 bg-transparent outline-none" value="${conf.qty}" onchange="updateAppConfig(${item.id},'${cat.name}','qty',this.value);">
+                                                            <button onclick="stepAppConfig(${item.id},'${cat.name}','qty',1)" class="p-1 text-orange-400"><i data-lucide="plus-circle" size="20"></i></button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label class="text-xs font-black text-slate-400 block mb-2 uppercase">調整器選擇</label>
+                                                    <select class="w-full bg-white border border-slate-200 p-3 rounded-xl text-sm font-black outline-none h-[60px]" onchange="updateAppConfig(${item.id},'${cat.name}','regulator',this.value)">
+                                                        <option value="無" ${conf.regulator==='無'?'selected':''}>無</option>
+                                                        <option value="無表調整器($500)" ${conf.regulator==='無表調整器($500)'?'selected':''}>無表調整器($500)</option>
+                                                        <option value="有表調整器($1500)" ${conf.regulator==='有表調整器($1500)'?'selected':''}>有表調整器($1500)</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label class="text-xs font-black text-slate-400 block mb-2 uppercase">瓦斯管 (cm)</label>
+                                                    <div class="dual-input-container border-2 border-slate-100 h-[60px] shadow-none px-2 rounded-xl">
+                                                        <button onclick="stepAppConfig(${item.id},'${cat.name}','pipeLen',-1)" class="dual-input-btn p-1 text-slate-300"><i data-lucide="minus-circle" size="22"></i></button>
+                                                        <input type="text" inputmode="tel" class="w-full text-center text-sm font-black bg-transparent border-none outline-none" value="${conf.pipeLen}" onchange="updateAppConfig(${item.id},'${cat.name}','pipeLen',this.value);">
+                                                        <button onclick="stepAppConfig(${item.id},'${cat.name}','pipeLen',1)" class="dual-input-btn p-1 text-blue-500"><i data-lucide="plus-circle" size="22"></i></button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                    ` : ''}
+
+                                    <!-- 瓦斯爐自裝模式 -->
+                                    ${cat.name === '瓦斯爐' && (conf.mode === 'carry' || conf.mode === 'brand') ? `
+                                            <div class="grid grid-cols-2 gap-8 pt-4">
+                                                <div>
+                                                    <label class="text-xs font-black text-slate-400 block mb-2 uppercase">調整器選擇</label>
+                                                    <select class="w-full bg-white border border-slate-200 p-3 rounded-xl text-sm font-black outline-none h-[60px]" onchange="updateAppConfig(${item.id},'${cat.name}','regulator',this.value)">
+                                                        <option value="無" ${conf.regulator==='無'?'selected':''}>無</option>
+                                                        <option value="無表調整器($500)" ${conf.regulator==='無表調整器($500)'?'selected':''}>無表調整器($500)</option>
+                                                        <option value="有表調整器($1500)" ${conf.regulator==='有表調整器($1500)'?'selected':''}>有表調整器($1500)</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label class="text-xs font-black text-slate-400 block mb-2 uppercase">瓦斯管 (cm)</label>
+                                                    <div class="dual-input-container border-2 border-slate-100 h-[60px] shadow-none px-2 rounded-xl">
+                                                        <button onclick="stepAppConfig(${item.id},'${cat.name}','pipeLen',-1)" class="dual-input-btn p-1 text-slate-300"><i data-lucide="minus-circle" size="22"></i></button>
+                                                        <input type="text" inputmode="tel" class="w-full text-center text-sm font-black bg-transparent border-none outline-none" value="${conf.pipeLen}" onchange="updateAppConfig(${item.id},'${cat.name}','pipeLen',this.value);">
+                                                        <button onclick="stepAppConfig(${item.id},'${cat.name}','pipeLen',1)" class="dual-input-btn p-1 text-blue-500"><i data-lucide="plus-circle" size="22"></i></button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                    ` : ''}
+
+                                    <!-- 抽油煙機系列 -->
+                                    ${cat.name.includes('油煙機') && (conf.mode !== 'none') ? `
+                                            ${conf.mode === 'install' ? `
+                                            <div class="grid grid-cols-2 gap-8 pt-4">
+                                                <div class="col-span-1 bg-orange-50 p-6 rounded-2xl border border-orange-100 flex items-center justify-between">
+                                                    <div><span class="text-xs font-black text-orange-600 block mb-1">代裝工資</span><span class="text-xl font-black text-orange-700">$${cat.installFee}/台</span></div>
+                                                    <div class="w-36">
+                                                        <div class="dual-input-container border-orange-200">
+                                                            <button onclick="stepAppConfig(${item.id},'${cat.name}','qty',-1)" class="p-1 text-orange-400"><i data-lucide="minus-circle" size="24"></i></button>
+                                                            <input type="text" inputmode="tel" class="w-full text-center text-lg font-black text-orange-700 bg-transparent outline-none" value="${conf.qty}" onchange="updateAppConfig(${item.id},'${cat.name}','qty',this.value);">
+                                                            <button onclick="stepAppConfig(${item.id},'${cat.name}','qty',1)" class="p-1 text-orange-400"><i data-lucide="plus-circle" size="24"></i></button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>` : ''}
+                                            <div class="grid grid-cols-2 gap-8 pt-4">
+                                                <div>
+                                                    <label class="text-xs font-black text-slate-400 block mb-2 uppercase">排風管耗材</label>
+                                                    <select class="w-full bg-white border border-slate-200 p-3 rounded-xl text-sm font-black outline-none h-[60px]" onchange="updateAppConfig(${item.id},'${cat.name}','ductType',this.value)">
+                                                        <option value="無" ${conf.ductType==='無'?'selected':''}>無</option>
+                                                        <option value="鋁風管12尺($160/支)" ${conf.ductType==='鋁風管12尺($160/支)'?'selected':''}>鋁風管12尺($160/支)</option>
+                                                        <option value="鋁風管24尺($320/支)" ${conf.ductType==='鋁風管24尺($320/支)'?'selected':''}>鋁風管24尺($320/支)</option>
+                                                        <option value="白鐵風管($25/CM)" ${conf.ductType==='白鐵風管($25/CM)'?'selected':''}>白鐵風管($25/CM)</option>
+                                                    </select>
+                                                </div>
+                                                ${isDuctActive ? `
+                                                <div class="animate-in slide-in-from-right-2 col-span-1"> 
+                                                    ${conf.ductType.includes('白鐵') ? `
+                                                    <div>
+                                                        <label class="text-xs font-black text-slate-400 block mb-2 uppercase">長度 (CM)</label> 
+                                                        <div class="dual-input-container border-2 border-slate-100 h-[60px] shadow-none px-2 rounded-xl">
+                                                            <button onclick="stepAppConfig(${item.id},'${cat.name}','ductLen',-1)" class="dual-input-btn p-1 text-slate-300"><i data-lucide="minus-circle" size="22"></i></button>
+                                                            <input type="text" inputmode="tel" class="w-full text-center text-sm font-black bg-transparent border-none outline-none" value="${conf.ductLen}" onchange="updateAppConfig(${item.id},'${cat.name}','ductLen',this.value);">
+                                                            <button onclick="stepAppConfig(${item.id},'${cat.name}','ductLen',1)" class="dual-input-btn p-1 text-blue-500"><i data-lucide="plus-circle" size="22"></i></button>
+                                                        </div>
+                                                    </div>` : `
+                                                    <div>
+                                                        <label class="text-xs font-black text-slate-400 block mb-2 uppercase">耗材數量</label> 
+                                                        <div class="dual-input-container border-2 border-slate-100 h-[60px] shadow-none px-2 rounded-xl">
+                                                            <button onclick="stepAppConfig(${item.id},'${cat.name}','ductQty',-1)" class="dual-input-btn p-1 text-slate-300"><i data-lucide="minus-circle" size="22"></i></button>
+                                                            <input type="text" inputmode="tel" class="w-full text-center text-sm font-black bg-transparent border-none outline-none" value="${conf.ductQty}" onchange="updateAppConfig(${item.id},'${cat.name}','ductQty',this.value);">
+                                                            <button onclick="stepAppConfig(${item.id},'${cat.name}','ductQty',1)" class="dual-input-btn p-1 text-blue-500"><i data-lucide="plus-circle" size="22"></i></button>
+                                                        </div>
+                                                    </div>`}
+                                                </div>` : ''}
+                                            </div>
+                                    ` : ''}
+                                </div>
+                            ` : ''}
+                        </div>`;
+                        }).join('')}
+
+                        <!-- 其他類別區域 -->
+                        <div class="bg-white border-4 border-dashed border-slate-100 rounded-[2.5rem] p-10 flex flex-col gap-8">
+                             <div class="flex items-center justify-between">
+                                 <h4 class="text-2xl font-black text-slate-800">其他自定義項目 / 其他服務</h4>
+                                 ${!item.tempOther.active ? `<button onclick="const i=items.find(x=>x.id===${item.id}); i.tempOther.active=true; render();" class="bg-slate-900 text-white px-8 py-3 rounded-xl font-black flex items-center gap-2 hover:scale-105 transition-all"><i data-lucide="plus"></i> 新增新項目</button>` : ''}
+                             </div>
+                             
+                             ${item.otherItems.length > 0 ? `
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    ${item.otherItems.map(oi => `
+                                        <div class="bg-slate-50 border border-slate-200 p-6 rounded-2xl flex justify-between items-center shadow-sm">
+                                            <div class="flex flex-col">
+                                                <span class="text-lg font-black text-slate-900">${oi.name}</span>
+                                                <span class="text-sm font-bold text-slate-400">$${oi.price.toLocaleString()} x ${oi.qty}</span>
+                                            </div>
+                                            <div class="flex items-center gap-6">
+                                                <span class="text-xl font-black text-blue-600">$${(oi.price * oi.qty).toLocaleString()}</span>
+                                                <button onclick="removeOtherItem(${item.id}, ${oi.id})" class="text-red-300 hover:text-red-500 transition-colors"><i data-lucide="trash-2" size="24"></i></button>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                             ` : ''}
+
+                             ${item.tempOther.active ? `
+                                <div class="bg-slate-900 p-8 rounded-[2rem] text-white animate-in zoom-in-95">
+                                    <div class="grid grid-cols-1 md:grid-cols-12 gap-6 items-end">
+                                        <div class="md:col-span-5">
+                                            <label class="text-xs font-black text-slate-400 block mb-3">項目名稱</label>
+                                            <input type="text" placeholder="輸入名稱" class="w-full bg-slate-800 border-none p-4 rounded-xl text-white outline-none focus:ring-2 focus:ring-blue-500 font-black" oninput="const i=items.find(x=>x.id===${item.id}); i.tempOther.name=this.value;">
+                                        </div>
+                                        <div class="md:col-span-3">
+                                            <label class="text-xs font-black text-slate-400 block mb-3">單價</label>
+                                            <input type="text" inputmode="tel" placeholder="金額" class="w-full bg-slate-800 border-none p-4 rounded-xl text-white outline-none font-black" oninput="const i=items.find(x=>x.id===${item.id}); i.tempOther.price=this.value;">
+                                        </div>
+                                        <div class="md:col-span-2">
+                                            <label class="text-xs font-black text-slate-400 block mb-3">數量</label>
+                                            <div class="flex bg-slate-800 rounded-xl overflow-hidden p-1">
+                                                <button onclick="const i=items.find(x=>x.id===${item.id}); i.tempOther.qty = Math.max(1, (parseInt(i.tempOther.qty)||1)-1).toString(); render();" class="w-12 h-12 flex items-center justify-center text-blue-400"><i data-lucide="minus"></i></button>
+                                                <input type="text" class="w-full bg-transparent border-none text-center font-black outline-none" value="${item.tempOther.qty}" oninput="const i=items.find(x=>x.id===${item.id}); i.tempOther.qty=this.value;">
+                                                <button onclick="const i=items.find(x=>x.id===${item.id}); i.tempOther.qty = ((parseInt(i.tempOther.qty)||1)+1).toString(); render();" class="w-12 h-12 flex items-center justify-center text-blue-400"><i data-lucide="plus"></i></button>
+                                            </div>
+                                        </div>
+                                        <div class="md:col-span-2 flex gap-3">
+                                            <button onclick="addOtherItem(${item.id})" class="flex-1 bg-blue-600 h-14 rounded-xl font-black text-white hover:bg-blue-500 transition-all">儲存</button>
+                                            <button onclick="const i=items.find(x=>x.id===${item.id}); i.tempOther.active=false; render();" class="flex-1 bg-slate-700 h-14 rounded-xl font-black text-slate-300 hover:bg-slate-600 transition-all">取消</button>
+                                        </div>
+                                    </div>
+                                </div>
+                             ` : ''}
+                        </div>
+                    </div>`;
+                } else if (item.type === 'piece') {
+                    contentHTML = `<div class="space-y-12">
+                        <label class="text-sm font-black text-slate-400 mb-6 block w-full px-2 uppercase italic tracking-[0.2em]">選擇件式廚具模組 PIECE MODULES</label>
+                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 w-full">
+                            ${DATA.pieceCabinets.map(p => `<button onclick="togglePiece(${item.id}, '${p.name}')" class="chip-btn h-24 flex flex-col items-center justify-center gap-2 border-2 transition-all shadow-sm ${item.selectedPieces.includes(p.name) ? 'active-emerald scale-95 border-emerald-600 ring-2 ring-emerald-200' : 'hover:bg-emerald-50'}">
+                                <span class="text-base font-black">${p.name}</span><span class="text-xs opacity-70 italic font-bold">$${p.price.toLocaleString()}</span></button>`).join('')}
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-10">
+                            <div class="bg-white p-8 rounded-[2rem] border shadow-sm flex flex-col h-full font-black"><h4 class="text-sm font-black text-slate-400 uppercase mb-6 italic"><i data-lucide="check-square" size="18"></i> 額外選項</h4><div class="flex flex-wrap gap-4">${['選色加價', '件式自載'].map(opt => `<button onclick="togglePieceOption(${item.id}, '${opt}')" class="chip-btn flex-1 py-4 border-2 ${item.pieceOptions.includes(opt) ? 'active-blue scale-95' : ''}">${opt} ${opt==='選色加價'?'+150':'-150'}</button>`).join('')}</div></div>
+                            <div class="bg-white p-8 rounded-[2rem] border shadow-sm flex flex-col h-full font-black"><h4 class="text-sm font-black text-slate-400 uppercase mb-6 italic"><i data-lucide="wrench" size="18"></i> 安裝費小計</h4><div class="grid grid-cols-2 gap-4">${['瓦斯爐', '抽油煙機', '烘碗機', '水龍頭'].map(inst => `<button onclick="togglePieceInstall(${item.id}, '${inst}')" class="chip-btn py-4 border-2 ${item.pieceInstalls.includes(inst) ? 'active-orange scale-95' : ''}">${inst}</button>`).join('')}</div></div>
+                            ${renderPieceSideHTML(item)}
+                        </div>
+                    </div>`;
+                } else if (item.type === 'high') {
+                    contentHTML = `<div class="space-y-14 font-black">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-10">
+                            <div><label class="text-sm text-slate-400 mb-2 block font-black uppercase">高櫃型號</label><select class="w-full bg-white border-2 border-slate-100 p-5 rounded-2xl text-sm font-black outline-none h-[60px]" onchange="updateItemField(${item.id}, 'highSpec', this.value)">${Object.keys(DATA.highData).map(s => `<option ${item.highSpec===s?'selected':''}>${s}</option>`).join('')}</select></div>
+                            <div><label class="text-sm text-slate-400 mb-2 block font-black uppercase">門板材質</label><select class="w-full bg-white border-2 border-slate-100 p-5 rounded-2xl text-sm font-black outline-none h-[60px]" onchange="updateItemField(${item.id}, 'highDoor', this.value)">${Object.keys(DATA.highData[item.highSpec]).map(d => `<option ${item.highDoor===d?'selected':''}>${d}</option>`).join('')}</select></div>
+                            <div>${item.highSpec.includes("高身拉櫃") ? `<div class="h-[60px] flex items-center justify-center opacity-30 border-2 border-dashed border-slate-200 rounded-2xl"><span class="text-xs font-black text-slate-400 uppercase tracking-widest italic">拉櫃含掛籃 - 無須選配</span></div>` : `<label class="text-sm text-slate-400 mb-2 block font-black uppercase">緩衝滑軌</label><div class="dual-input-container border-2 border-slate-100"><button onclick="stepItemField(${item.id},'railQty',-1)" class="dual-input-btn"><i data-lucide="minus-circle" size="24"></i></button><input id="railQty-${item.id}" type="text" inputmode="tel" class="w-full text-center text-lg font-black bg-transparent outline-none" value="${item.railQty}" oninput="updateItemField(${item.id},'railQty',this.value)"><button onclick="stepItemField(${item.id},'railQty',1)" class="dual-input-btn"><i data-lucide="plus-circle" size="24"></i></button></div>`}</div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-10 items-start">
+                            <div class="bg-white p-8 rounded-[2rem] border shadow-sm flex flex-col h-full font-black"><h4 class="text-sm font-black text-slate-400 uppercase mb-6 italic">特殊配件</h4><div class="space-y-3 mb-5">${item.specialAccessories.map(a => `<div class="flex justify-between items-center bg-slate-50 p-3 rounded-xl text-sm border border-slate-100"><div><span>${a.name}</span><div class="text-xs text-slate-400 font-bold">$${a.price} x ${a.qty}</div></div><button onclick="removeAcc(${item.id}, ${a.id})" class="text-red-400"><i data-lucide="x-circle" size="20"></i></button></div>`).join('')}</div>${item.tempAcc.active ? `<div class="bg-blue-50/50 p-6 rounded-2xl space-y-4"><input id="tempAccName-${item.id}" type="text" placeholder="配件名稱" class="w-full p-3 text-sm rounded-lg border-none shadow-sm outline-none font-black" value="${item.tempAcc.name}" oninput="const i=items.find(x=>x.id===${item.id}); i.tempAcc.name=this.value;"><div class="flex gap-3"><input id="tempAccPrice-${item.id}" type="text" inputmode="tel" placeholder="單價" class="col-span-2 w-full p-3 text-sm rounded-lg border-none shadow-sm outline-none font-black" value="${item.tempAcc.price}" oninput="const i=items.find(x=>x.id===${item.id}); i.tempAcc.price=this.value;">
+                                <input id="tempAccQty-${item.id}" type="text" inputmode="tel" placeholder="數量" class="w-20 p-3 text-sm rounded-lg border-none shadow-sm outline-none text-center font-black" value="${item.tempAcc.qty}" oninput="const i=items.find(x=>x.id===${item.id}); i.tempAcc.qty=this.value;"></div><div class="flex gap-3"><button onclick="saveAcc(${item.id})" class="flex-1 bg-blue-600 text-white text-sm py-3 rounded-lg font-black">儲存</button><button onclick="toggleAddAcc(${item.id}, false)" class="flex-1 bg-slate-200 text-slate-600 text-sm py-3 rounded-lg font-black">取消</button></div></div>` : `<button onclick="toggleAddAcc(${item.id}, true)" class="w-full border-2 border-dashed border-slate-200 text-slate-400 text-sm py-4 rounded-2xl hover:bg-slate-50 font-black">+ 新增特殊配件</button>`}</div>
+                            ${renderSideHTML(item)}
+                            ${renderHandleHTML(item)}
+                        </div>
+                    </div>`;
+                } else {
+                    contentHTML = renderInputs(item);
+                }
+
+                card.innerHTML = `
+                    <div class="p-8 flex justify-between items-center text-white ${theme}">
+                        <div class="flex items-center gap-6 cursor-pointer" onclick="toggleCollapse(${item.id})">
+                            <span class="bg-white/20 px-4 py-1.5 rounded-full text-sm font-black italic">項目 ${idx+1}</span>
+                            <h3 class="text-2xl font-black uppercase tracking-widest">${typeNames[item.type]}配置 <span class="ml-4 bg-white/20 px-3 py-1 rounded text-lg font-black">$${total.toLocaleString()}</span></h3>
+                        </div>
+                        <div class="flex items-center gap-3 no-print">
+                             <button onclick="toggleCollapse(${item.id})" class="p-3 hover:bg-white/10 rounded-lg"><i data-lucide="${item.isCollapsed ? 'chevron-down' : 'chevron-up'}" size="24"></i></button>
+                             <button onclick="removeItem(${item.id})" class="p-3 hover:bg-red-500 rounded-lg"><i data-lucide="trash-2" size="24"></i></button>
+                        </div>
+                    </div>
+                    <div class="${item.isCollapsed ? 'hidden' : 'p-10 md:p-14'}">
+                        ${contentHTML}
+                        <div class="bg-slate-50 border-t border-slate-100 flex flex-col md:flex-row mt-14">
+                            <div class="flex-1 p-10">
+                                <div class="flex items-center gap-3 mb-6 text-slate-400 font-black uppercase tracking-widest"><i data-lucide="list-checks" size="20"></i><span class="text-sm">明細分析 BREAKDOWN</span></div>
+                                <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
+                                    ${detail.map(d => `<div class="flex flex-col border-l-2 border-slate-200 pl-4 py-2"><span class="text-sm font-black text-slate-700 truncate">${d.name}</span><div class="flex justify-between items-center mt-1"><span class="text-base font-black text-slate-900">$${(d.val||0).toLocaleString()}</span></div></div>`).join('')}
+                                </div>
+                            </div>
+                            <div class="${theme} bg-opacity-5 p-10 flex flex-col justify-center items-end border-l border-slate-200 min-w-[300px]"><span class="text-sm font-black text-blue-600 uppercase tracking-widest italic mb-3">Item Subtotal</span><div class="text-6xl font-black italic text-blue-600 underline decoration-2 underline-offset-8">$${total.toLocaleString()}</div></div>
+                        </div>
+                    </div>`;
+                container.appendChild(card);
+
+                // 生成列印項目
+                const printItemDiv = document.createElement('div');
+                printItemDiv.className = "border border-slate-200 rounded-xl overflow-hidden break-inside-avoid";
+                
+                const printDetails = detail.map(d => {
+                    let displayName = d.name;
+                    if (d.name.includes('主體')) {
+                        displayName = "主體"; 
+                    }
+                    return { ...d, name: displayName };
+                });
+
+                printItemDiv.innerHTML = `
+                    <div class="bg-slate-100 px-5 py-2.5 flex justify-between items-center border-b border-slate-200"><span class="text-base font-black uppercase tracking-widest">${typeNames[item.type]}</span><span class="text-lg font-black">$${total.toLocaleString()}</span></div>
+                    <div class="p-5 grid grid-cols-2 gap-x-10 gap-y-1.5">${printDetails.map(d => `<div class="flex justify-between text-sm py-1 border-b border-slate-50"><span class="text-slate-500">${d.name}</span><span class="font-bold">${d.hideVal ? '' : '$' + (d.val||0).toLocaleString()}</span></div>`).join('')}</div>`;
+                printList.appendChild(printItemDiv);
+            });
+
+            document.getElementById('grand-total').innerText = `$${totalAll.toLocaleString()}`;
+            document.getElementById('print-cust-name').innerText = document.getElementById('cust-name').value || "尚未填寫";
+            document.getElementById('print-cust-phone').innerText = document.getElementById('cust-phone').value || "尚未填寫";
+            document.getElementById('print-cust-address').innerText = document.getElementById('cust-address').value || "尚未填寫";
+            const dateVal = document.getElementById('date').value;
+            document.getElementById('print-date-display').innerText = `報價日期：${dateVal ? dateVal.replace(/-/g, '/') : "尚未填寫"}`;
+            document.getElementById('print-total-display').innerText = `$${totalAll.toLocaleString()}`;
+
+            if (dateVal) {
+                const baseDate = new Date(dateVal); baseDate.setDate(baseDate.getDate() + 7);
+                const validStr = `${baseDate.getFullYear()}/${String(baseDate.getMonth() + 1).padStart(2, '0')}/${String(baseDate.getDate()).padStart(2, '0')}`;
+                document.getElementById('valid-until-display').innerText = validStr;
+                document.getElementById('print-valid-display').innerText = validStr;
+            }
+
+            lucide.createIcons();
+
+            window.scrollTo(0, scrollPos);
+            Object.entries(innerScrollStates).forEach(([id, top]) => {
+                const el = document.getElementById(id);
+                if (el) el.scrollTop = top;
+            });
+
+            if (activeId) {
+                const el = document.getElementById(activeId);
+                if (el) {
+                    el.focus();
+                    if (el.setSelectionRange && (el.type === 'text' || el.type === 'tel')) {
+                        el.setSelectionRange(selectionStart, selectionEnd);
+                    }
+                }
+            }
+        }
+
+        function renderSideHTML(item) {
+            const sideCat = (item.type === 'high') ? 'high' : (item.type === 'wall' ? 'wall' : 'base');
+            const sideMaterials = Object.keys(DATA.sidePricing[item.sideType]?.[sideCat] || {});
+            return `<div class="bg-white p-7 rounded-[2rem] border shadow-sm flex flex-col h-full font-black">
+                <h4 class="text-sm font-black text-slate-400 uppercase mb-5 italic font-black flex items-center gap-2"><i data-lucide="shield-check" size="18"></i> 兩側處理配置</h4>
+                <select class="w-full bg-slate-50 p-4 rounded-xl text-base font-black border-none shadow-md outline-none" onchange="updateItemField(${item.id}, 'sideType', this.value)">
+                    <option value="none" ${item.sideType==='none'?'selected':''}>無處理</option>
+                    <option value="sticker" ${item.sideType==='sticker'?'selected':''}>側貼</option>
+                    <option value="panel" ${item.sideType==='panel'?'selected':''}>側封板</option>
+                </select>
+                ${item.sideType!=='none' ? `<div class="animate-in slide-in-from-top-1 space-y-4 mt-5 pt-5 border-t border-slate-200">
+                    <div><label class="text-xs text-slate-400 uppercase font-black block mb-2 px-1">材質設定</label><select class="w-full bg-white border border-slate-100 p-3 rounded-xl text-sm font-black outline-none" onchange="updateItemField(${item.id},'sideMaterial',this.value)">${sideMaterials.map(m=>(`<option ${item.sideMaterial===m?'selected':''}>${m}</option>`)).join('')}</select></div>
+                    <div><label class="text-xs text-slate-400 uppercase font-black block mb-2 px-1">數量</label><div class="dual-input-container border-2 border-slate-100 shadow-none px-2 rounded-xl"><button onclick="stepItemField(${item.id},'sideQty',-1)" class="dual-input-btn p-1 flex-shrink-0 text-slate-300"><i data-lucide="minus-circle" size="24"></i></button><input id="sideQty-${item.id}" type="text" inputmode="tel" class="w-full text-center text-lg font-black bg-transparent border-none outline-none" value="${item.sideQty}" oninput="updateItemField(${item.id},'sideQty',this.value)"><button onclick="stepItemField(${item.id},'sideQty',1)" class="dual-input-btn p-1 flex-shrink-0 text-blue-500"><i data-lucide="plus-circle" size="24"></i></button></div></div>
+                </div>` : ''}
+            </div>`;
+        }
+
+        function renderHandleHTML(item) {
+            return `<div class="bg-white p-8 rounded-[2rem] border shadow-sm flex flex-col gap-5 h-full font-black">
+                <h4 class="text-sm font-black text-slate-400 uppercase italic tracking-widest font-bold mb-2">把手配置</h4>
+                <select class="w-full bg-slate-50 p-4 rounded-xl text-sm font-bold border-none outline-none font-black shadow-sm" onchange="updateItemField(${item.id}, 'handleType', this.value)">
+                    ${DATA.handleOptions.map(h => `<option ${item.handleType===h.name?'selected':''}>${h.name}</option>`).join('')}
+                </select>
+                <div><label class="text-xs text-slate-400 font-black block mb-2 uppercase tracking-widest font-black">數量</label><div class="dual-input-container border-2 border-slate-100 font-black"><button onclick="stepItemField(${item.id},'handleQty',-1)" class="dual-input-btn"><i data-lucide="minus-circle" size="24"></i></button><input id="handleQty-${item.id}" type="text" inputmode="tel" class="w-full text-center text-lg font-black bg-transparent border-none outline-none font-black" value="${item.handleQty}" oninput="updateItemField(${item.id},'handleQty',this.value)"><button onclick="stepItemField(${item.id},'handleQty',1)" class="dual-input-btn"><i data-lucide="plus-circle" size="24"></i></button></div></div>
+            </div>`;
+        }
+
+        function renderPieceSideHTML(item) {
+            const sideMaterials = Object.keys(DATA.sidePricing[item.sideType]?.['base'] || {});
+            return `<div class="bg-white p-7 rounded-[2rem] border shadow-sm flex flex-col h-full font-black">
+                <h4 class="text-sm font-black text-slate-400 uppercase mb-5 italic font-black flex items-center gap-2"><i data-lucide="shield-check" size="18"></i> 兩側處理配置</h4>
+                <select class="w-full bg-slate-50 p-4 rounded-xl text-base font-black border-none shadow-md outline-none" onchange="updateItemField(${item.id}, 'sideType', this.value)">
+                    <option value="none" ${item.sideType==='none'?'selected':''}>無處理</option>
+                    <option value="sticker" ${item.sideType==='sticker'?'selected':''}>側貼</option>
+                    <option value="panel" ${item.sideType==='panel'?'selected':''}>側封板</option>
+                </select>
+                ${item.sideType!=='none' ? `<div class="animate-in slide-in-from-top-1 space-y-4 mt-5 pt-5 border-t border-slate-200">
+                    <div><label class="text-xs text-slate-400 uppercase font-black block mb-2 px-1">材質設定</label><select class="w-full bg-white border border-slate-100 p-3 rounded-xl text-sm font-black outline-none" onchange="updateItemField(${item.id},'sideMaterial',this.value)">${sideMaterials.map(m=>(`<option ${item.sideMaterial===m?'selected':''}>${m}</option>`)).join('')}</select></div>
+                    <div><label class="text-xs text-slate-400 uppercase font-black block mb-2 px-1">數量</label><div class="dual-input-container border-2 border-slate-100 shadow-none px-2 rounded-xl"><button onclick="stepItemField(${item.id},'sideQty',-1)" class="dual-input-btn p-1 flex-shrink-0 text-slate-300"><i data-lucide="minus-circle" size="24"></i></button><input id="sideQty-${item.id}" type="text" inputmode="tel" class="w-full text-center text-lg font-black bg-transparent border-none outline-none" value="${item.sideQty}" oninput="updateItemField(${item.id},'sideQty',this.value)"><button onclick="stepItemField(${item.id},'sideQty',1)" class="dual-input-btn p-1 flex-shrink-0 text-blue-500"><i data-lucide="plus-circle" size="24"></i></button></div></div>
+                </div>` : ''}
+            </div>`;
+        }
+
+        function saveSink(id) {
+            const i = items.find(x => x.id === id);
+            if(i && i.tempSink.name && i.tempSink.price) {
+                i.customSinks.push({ id: Date.now(), name: i.tempSink.name, price: Number(i.tempSink.price) || 0, qty: Number(i.tempSink.qty) || 1 });
+                i.tempSink = { name: '', price: '', qty: '1', active: false };
+                render();
+            }
+        }
+        function removeSink(itemId, sinkId) {
+            const i = items.find(x => x.id === itemId);
+            if(i) { i.customSinks = i.customSinks.filter(a => a.id !== sinkId); render(); }
+        }
+        function toggleAddAcc(id, active) {
+            const i = items.find(x => x.id === id);
+            if(i) { i.tempAcc.active = active; render(); }
+        }
+        function saveAcc(id) {
+            const i = items.find(x => x.id === id);
+            if(i && i.tempAcc.name && i.tempAcc.price) {
+                i.specialAccessories.push({ id: Date.now(), name: i.tempAcc.name, price: Number(i.tempAcc.price) || 0, qty: Number(i.tempAcc.qty) || 1 });
+                i.tempAcc = { name: '', price: '', qty: '1', active: false };
+                render();
+            }
+        }
+        function removeAcc(itemId, accId) {
+            const i = items.find(x => x.id === itemId);
+            if(i) { i.specialAccessories = i.specialAccessories.filter(a => a.id !== accId); render(); }
+        }
+        function togglePiece(id, name) {
+            const i = items.find(x => x.id === id);
+            if(i) {
+                const idx = i.selectedPieces.indexOf(name);
+                if(idx > -1) i.selectedPieces.splice(idx, 1); else i.selectedPieces.push(name);
+                render();
+            }
+        }
+        function togglePieceOption(id, opt) {
+            const i = items.find(x => x.id === id);
+            if(i) {
+                const idx = i.pieceOptions.indexOf(opt);
+                if(idx > -1) i.pieceOptions.splice(idx, 1); else i.pieceOptions.push(opt);
+                render();
+            }
+        }
+        function togglePieceInstall(id, inst) {
+            const i = items.find(x => x.id === id);
+            if(i) {
+                const idx = i.pieceInstalls.indexOf(inst);
+                if(idx > -1) i.pieceInstalls.splice(idx, 1); else i.pieceInstalls.push(inst);
+                render();
+            }
+        }
+
+        // 新增導出 Excel 功能
+        function exportToExcel() {
+            const name = document.getElementById('cust-name').value || "未填寫";
+            const phone = document.getElementById('cust-phone').value || "未填寫";
+            const address = document.getElementById('cust-address').value || "未填寫";
+            const date = document.getElementById('date').value || "未填寫";
+
+            const data = [
+                ["系統化櫥櫃報價單"],
+                ["客戶名稱", name, "聯絡電話", phone],
+                ["工程地址", address, "報價日期", date],
+                [], 
+                ["項次", "類別", "詳細規格/明細內容", "數量", "單價/金額"] 
+            ];
+
+            let grandTotal = 0;
+            const typeNames = { base: '下櫃', wall: '吊櫃', high: '高櫃', piece: '件式模組', appliance: '電器/其他' };
+
+            items.forEach((item, index) => {
+                const result = calculate(item);
+                grandTotal += result.total;
+                const typeName = typeNames[item.type] || item.type;
+                
+                let rows = [];
+
+                // 1. 收集規格資料 (Specifications)
+                if (item.type === 'base' || item.type === 'wall') {
+                    rows.push({ name: `[規格] 長度: ${item.length || 0} cm`, val: "" });
+                    rows.push({ name: `[規格] 材質單價: $${item.rate || 0} /cm`, val: "" });
+                    rows.push({ name: `[規格] 桶身材質: ${item.body}`, val: "" });
+                    rows.push({ name: `[規格] 門板等級: ${item.door}`, val: "" });
+                    if (item.type === 'base') {
+                        rows.push({ name: `[規格] 檯面材質: ${item.countertop}`, val: "" });
+                        rows.push({ name: `[規格] 踢腳板: ${item.kickplateType}`, val: "" });
+                    }
+                    if (item.type === 'wall') {
+                        rows.push({ name: `[規格] 高度規格: ${item.wallSpec}`, val: "" });
+                    }
+                    if (item.isL) rows.push({ name: `[規格] L型轉角: 是`, val: "" });
+                    rows.push({ name: `[規格] 把手: ${item.handleType}`, val: "" });
+                } else if (item.type === 'high') {
+                    rows.push({ name: `[規格] 高櫃型號: ${item.highSpec}`, val: "" });
+                    rows.push({ name: `[規格] 門板材質: ${item.highDoor}`, val: "" });
+                    if (!item.highSpec.includes("高身拉櫃")) {
+                        rows.push({ name: `[規格] 緩衝滑軌: ${item.railQty} 組`, val: "" });
+                    }
+                    rows.push({ name: `[規格] 把手: ${item.handleType}`, val: "" });
+                }
+                
+                if (item.type !== 'appliance' && item.sideType !== 'none') {
+                    const sideName = item.sideType === 'sticker' ? '側貼' : '側封板';
+                    rows.push({ name: `[規格] 兩側處理: ${sideName} (${item.sideMaterial})`, val: "" });
+                }
+
+                // 2. 收集價格明細 (Price Details)
+                result.detail.forEach(d => {
+                    const cleanName = d.name.replace(/<br\s*\/?>/gi, " / ").replace(/<[^>]+>/g, "").trim();
+                    rows.push({ name: cleanName, val: d.val, qty: d.qty });
+                });
+
+                if (rows.length === 0) {
+                    rows.push({ name: "無詳細內容", val: result.total });
+                }
+
+                // 3. 寫入 Rows 到 Data
+                rows.forEach((r, i) => {
+                    data.push([
+                        i === 0 ? index + 1 : "", 
+                        i === 0 ? typeName : "",
+                        r.name,
+                        r.qty || "", // 新增數量顯示
+                        r.val
+                    ]);
+                });
+
+                // 4. 小計
+                data.push(["", "", "", "小計", result.total]);
+                data.push([]); // 空行
+            });
+
+            data.push([]);
+            data.push(["", "", "", "總計", grandTotal]);
+
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            
+            // Auto-width
+            const wscols = [
+                {wch: 10}, 
+                {wch: 15}, 
+                {wch: 60}, 
+                {wch: 15}, // Quantity column
+                {wch: 15}  
+            ];
+            ws['!cols'] = wscols;
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "報價單");
+            XLSX.writeFile(wb, `報價單_${name}_${date}.xlsx`);
+        }
+    </script>
+</body>
+</html>
